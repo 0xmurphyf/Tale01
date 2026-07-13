@@ -838,11 +838,9 @@ async function _connect(specificWallet) {
         } else {
             setStatus('> ACCESS DENIED: No Voxx Book Pass NFT found on this account.', 'error');
             if (btn) btn.classList.remove('loading');
-            currentAccount = null;
-            updateBadge();
-            // Re-show wallet list
-            const { get: getWalletsList } = getWallets();
-            showWalletList(getWalletsList());
+            // Keep connected state — show DISCONNECT so user can switch wallets
+            const disconnectBtn = E('gate-disconnect-btn');
+            if (disconnectBtn) disconnectBtn.style.display = '';
         }
     } catch (err) {
         console.error('Wallet connect error:', err);
@@ -898,9 +896,11 @@ async function verifyAndEnter() {
         if (disconnectBtn) disconnectBtn.style.display = '';
     } else {
         setStatus('> ACCESS DENIED: No Voxx Book Pass NFT found.', 'error');
-        currentAccount = null;
-        updateBadge();
-        showGate(true);
+        // Keep connected, hide enter, show disconnect
+        const enterBtn = E('gate-enter-btn');
+        if (enterBtn) enterBtn.style.display = 'none';
+        const disconnectBtn = E('gate-disconnect-btn');
+        if (disconnectBtn) disconnectBtn.style.display = '';
     }
 }
 
