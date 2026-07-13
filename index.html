@@ -669,7 +669,7 @@ async function checkKioskOwnership(address, structType) {
         console.log('Found kiosk IDs:', [...kioskIds]);
 
         // Step 2: Scan all kiosks in parallel with Promise.race — return on first match
-        const scanPromises = [...kioskIds].map(kioskId => scanSingleKiosk(kioskId, structType));
+        const scanPromises = [...kioskIds].map(kioskId => scanSingleKiosk(kioskId, structType, address));
 
         // Race: whichever kiosk finds the NFT first wins
         const result = await Promise.race([
@@ -685,8 +685,18 @@ async function checkKioskOwnership(address, structType) {
     }
 }
 
-async function scanSingleKiosk(kioskId, structType) {
+async function scanSingleKiosk(kioskId, structType, expectedOwner) {
     try {
+        // Quick check: verify kiosk owner matches if expectedOwner is provided
+        if (expectedOwner) {
+            const kioskRes = await rpcCall('sui_getObject', [kioskId, { showContent: true }]);
+            const kioskOwner = kioskRes?.data?.content?.fields?.owner;
+            if (kioskOwner && kioskOwner !== expectedOwner) {
+                console.log('Kiosk', kioskId, 'owner', kioskOwner, '!=', expectedOwner, '- skipping');
+                return false;
+            }
+        }
+
         // Get dynamic fields (items in kiosk)
         const dfRes = await rpcCall('suix_getDynamicFields', [kioskId, null, 50]);
         if (!dfRes.data) return false;
@@ -714,6 +724,18 @@ async function scanSingleKiosk(kioskId, structType) {
         console.error('Kiosk scan error for', kioskId, e);
         return false;
     }
+}
+
+/** Path 3: Find all kiosks where owner field matches address, scan them */
+async function checkAllKiosksByOwner(address, structType) {
+    // This path works even when user doesn't hold the KioskOwnerCap
+    // (e.g. cap was transferred but kiosk owner field still points to them)
+    // However, this is an expensive operation and not practical via public RPC.
+    // Instead, we rely on Path 1 (direct) + Path 2 (kiosk caps) as the primary methods.
+    // If the NFT is in a kiosk but the user has no cap, the kiosk owner field
+    // still says they own it — but they can't withdraw without the cap.
+    // For access-gating purposes, we consider kiosk owner = valid holder.
+    return false; // Not implemented via public RPC — would need indexer
 }
 
 /** Combined check: direct first (fast), then kiosk (parallel, race) */
