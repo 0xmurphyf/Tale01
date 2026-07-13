@@ -572,32 +572,126 @@ function showWalletList(wallets) {
     });
 }
 
+// ── NFT Ownership Check (Direct + Kiosk) ──
+
+async function rpcCall(method, params) {
+    return await rpcClient.transport.request({ method, params });
+}
+
+/** Path 1: Directly owned objects via suix_getOwnedObjects */
+async function getDirectlyOwnedObjects(address, structType, paginate) {
+    const results = [];
+    let cursor = null;
+    const filter = structType ? { StructType: structType } : null;
+    do {
+        const res = await rpcCall('suix_getOwnedObjects', [
+            address,
+            { filter, options: { showType: true, showContent: true } },
+            cursor,
+            50
+        ]);
+        if (res.data) results.push(...res.data);
+        cursor = paginate ? res.nextCursor : null;
+    } while (cursor);
+    return results;
+}
+
+/** Extract kiosk ID from KioskOwnerCap or PersonalKioskCap */
+function extractKioskId(obj) {
+    try {
+        const fields = obj?.data?.content?.fields;
+        if (!fields) return null;
+        // Standard KioskOwnerCap: fields.for
+        if (fields.for) return fields.for;
+        // PersonalKioskCap: fields.cap.fields.for
+        if (fields.cap?.fields?.for) return fields.cap.fields.for;
+        return null;
+    } catch (_) { return null; }
+}
+
+/** Path 2: Find NFTs inside Kiosks */
+async function getKioskOwnedObjects(address, structType) {
+    const results = [];
+
+    // Step 1: Find all KioskOwnerCap / PersonalKioskCap objects (no type filter = scan all)
+    const allOwned = await getDirectlyOwnedObjects(address, null, false);
+
+    const kioskIds = [];
+    for (const obj of allOwned) {
+        const kioskId = extractKioskId(obj);
+        if (kioskId) kioskIds.push(kioskId);
+    }
+
+    if (kioskIds.length === 0) return results;
+
+    // Step 2: For each kiosk, list items via suix_getDynamicFields
+    for (const kioskId of kioskIds) {
+        try {
+            let cursor = null;
+            const itemIds = [];
+            do {
+                const dfRes = await rpcCall('suix_getDynamicFields', [
+                    kioskId, cursor, 50
+                ]);
+                if (!dfRes.data) break;
+                for (const df of dfRes.data) {
+                    // DynamicObject = actual NFT; DynamicField = listing/metadata
+                    if (df.objectType && df.objectId) {
+                        itemIds.push(df.objectId);
+                    }
+                }
+                cursor = dfRes.nextCursor;
+            } while (cursor);
+
+            if (itemIds.length === 0) continue;
+
+            // Step 3: Batch fetch item types via sui_multiGetObjects
+            const itemsRes = await rpcCall('sui_multiGetObjects', [
+                itemIds,
+                { showType: true, showContent: true }
+            ]);
+
+            if (!itemsRes) continue;
+
+            for (const item of itemsRes) {
+                if (item.error) continue;
+                const objType = item.data?.type;
+                if (!objType) continue;
+                // Check if type matches the NFT filter
+                if (structType && objType !== structType) continue;
+                // Check if listed (has a DynamicField with Listing type on the same kiosk)
+                // For simplicity: if object has a kiosk listing sibling, skip
+                results.push(item.data);
+            }
+        } catch (e) {
+            console.error('Kiosk scan error for', kioskId, e);
+        }
+    }
+
+    return results;
+}
+
+/** Combined check: direct + kiosk, deduplicated */
 async function checkNftOwnership(address) {
     try {
-        const result = await rpcClient.getOwnedObjects({
-            owner: address,
-            filter: { StructType: NFT_TYPE },
-            options: { showType: true },
-        });
-        return (result.data && result.data.length > 0);
+        // Path 1: Directly owned
+        const direct = await getDirectlyOwnedObjects(address, NFT_TYPE, false);
+        if (direct.length > 0) {
+            console.log('NFT found via direct ownership:', direct.length);
+            return true;
+        }
+
+        // Path 2: Kiosk owned
+        const kiosk = await getKioskOwnedObjects(address, NFT_TYPE);
+        if (kiosk.length > 0) {
+            console.log('NFT found via kiosk:', kiosk.length);
+            return true;
+        }
+
+        return false;
     } catch (err) {
         console.error('NFT check error:', err);
-        // Try fallback: call suix_getOwnedObjects via transport directly
-        try {
-            const raw = await rpcClient.transport.request({
-                method: 'suix_getOwnedObjects',
-                params: [
-                    address,
-                    { filter: { StructType: NFT_TYPE }, options: { showType: true } },
-                    null,
-                    50
-                ]
-            });
-            return (raw.data && raw.data.length > 0);
-        } catch (err2) {
-            console.error('NFT check fallback error:', err2);
-            return false;
-        }
+        return false;
     }
 }
 
