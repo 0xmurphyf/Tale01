@@ -335,7 +335,7 @@
         border-radius: 6px;
     }
     .gate-connected-row {
-        display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+        display: flex; align-items: center; gap: 8px; margin-bottom: 0;
     }
     .gate-dot {
         width: 8px; height: 8px; border-radius: 50%; background: #0f8;
@@ -344,6 +344,14 @@
     .gate-connected-addr {
         font-size: 0.7rem; color: #ccc; letter-spacing: 1px; word-break: break-all; text-align: left;
     }
+    .gate-enter-btn {
+        display: inline-flex; align-items: center; gap: 8px;
+        width: 100%; padding: 12px; font-family: inherit; font-size: 0.78rem; letter-spacing: 2px;
+        background: rgba(0,255,255,0.08); border: 1px solid var(--c-cyan); color: var(--c-cyan);
+        border-radius: 6px; cursor: pointer; transition: 0.3s; margin-bottom: 10px;
+    }
+    .gate-enter-btn:hover { background: var(--c-cyan); color: #000; box-shadow: 0 0 25px rgba(0,255,255,0.3); }
+    .gate-enter-btn:disabled { opacity: 0.35; cursor: not-allowed; }
     .gate-disconnect-btn {
         width: 100%; padding: 8px; font-family: inherit; font-size: 0.68rem; letter-spacing: 2px;
         background: transparent; border: 1px solid rgba(255,80,80,0.4); color: #f66;
@@ -392,8 +400,11 @@
                     <span class="gate-dot"></span>
                     <span class="gate-connected-addr" id="gate-addr"></span>
                 </div>
-                <button class="gate-disconnect-btn" onclick="window._suiGate.disconnect()">DISCONNECT</button>
             </div>
+            <button class="gate-enter-btn" id="gate-enter-btn" style="display:none;" onclick="window._suiGate.enter()">
+                <span class="btn-label">START READING</span>
+            </button>
+            <button class="gate-disconnect-btn" id="gate-disconnect-btn" style="display:none;" onclick="window._suiGate.disconnect()">DISCONNECT</button>
             <div class="gate-status info" id="gate-status">> detect wallet_</div>
             <div class="gate-footer" id="gate-footer">
                 Need a pass? <a href="https://voxx.app" target="_blank" rel="noopener">voxx.app</a>
@@ -505,6 +516,7 @@ let gateResolve = null;
 window._suiGate = {
     connect: () => _connect(),
     disconnect: () => _disconnect(),
+    enter: () => _enter(),
 };
 
 const gatePromise = new Promise((resolve) => { gateResolve = resolve; });
@@ -528,6 +540,8 @@ function updateBadge() {
     const connected = E('gate-connected');
     const addrEl = E('gate-addr');
     const btn = E('gate-connect-btn');
+    const enterBtn = E('gate-enter-btn');
+    const disconnectBtn = E('gate-disconnect-btn');
     const title = E('gate-title');
     const sub = E('gate-sub');
     const list = E('gate-wallet-list');
@@ -540,13 +554,17 @@ function updateBadge() {
         if (addrEl) addrEl.textContent = currentAccount;
         if (connected) connected.style.display = '';
         if (btn) btn.style.display = 'none';
-        if (title) title.style.display = 'none';
-        if (sub) sub.style.display = 'none';
-        if (list) list.style.display = 'none';
-        if (footer) footer.style.display = 'none';
+        if (disconnectBtn) disconnectBtn.style.display = '';
+        // Keep title/sub/list/footer visible — don't hide them
+        if (title) title.style.display = '';
+        if (sub) sub.style.display = '';
+        if (list) list.style.display = '';
+        if (footer) footer.style.display = '';
     } else {
         if (badge) badge.style.display = 'none';
         if (connected) connected.style.display = 'none';
+        if (enterBtn) enterBtn.style.display = 'none';
+        if (disconnectBtn) disconnectBtn.style.display = 'none';
         if (btn) btn.style.display = '';
         if (title) title.style.display = '';
         if (sub) sub.style.display = '';
@@ -786,15 +804,15 @@ async function _connect(specificWallet) {
         const hasNft = await checkNftOwnership(currentAccount);
 
         if (hasNft) {
-            setStatus('> Book Pass verified \u2713 Access granted.', 'success');
+            setStatus('> Book Pass verified \u2713 Access granted. Click START READING to continue.', 'success');
             if (btn) btn.classList.remove('loading');
-            // Clear wallet list, show connected state
+            // Clear wallet list, show START READING + DISCONNECT
             const list = E('gate-wallet-list');
             if (list) list.innerHTML = '';
-            setTimeout(() => {
-                showGate(false);
-                gateResolve(currentAccount);
-            }, 800);
+            const enterBtn = E('gate-enter-btn');
+            if (enterBtn) enterBtn.style.display = '';
+            const disconnectBtn = E('gate-disconnect-btn');
+            if (disconnectBtn) disconnectBtn.style.display = '';
         } else {
             setStatus('> ACCESS DENIED: No Voxx Book Pass NFT found on this account.', 'error');
             if (btn) btn.classList.remove('loading');
@@ -818,6 +836,10 @@ function _disconnect() {
     setStatus('> Wallet disconnected. Connect to continue.', 'info');
     const btn = E('gate-connect-btn');
     if (btn) btn.classList.remove('loading');
+    const enterBtn = E('gate-enter-btn');
+    if (enterBtn) enterBtn.style.display = 'none';
+    const disconnectBtn = E('gate-disconnect-btn');
+    if (disconnectBtn) disconnectBtn.style.display = 'none';
     // Also try to disconnect from wallet
     try {
         const { get: getWalletsList } = getWallets();
@@ -830,14 +852,28 @@ function _disconnect() {
     } catch (_) {}
 }
 
+async function _enter() {
+    if (!currentAccount) return;
+    const enterBtn = E('gate-enter-btn');
+    if (enterBtn) {
+        enterBtn.disabled = true;
+        enterBtn.querySelector('.btn-label').textContent = 'ENTERING...';
+    }
+    showGate(false);
+    gateResolve(currentAccount);
+}
+
 async function verifyAndEnter() {
     if (!currentAccount) return;
     setStatus('> re-verifying Book Pass...', 'info');
     const hasNft = await checkNftOwnership(currentAccount);
     if (hasNft) {
         updateBadge();
-        showGate(false);
-        gateResolve(currentAccount);
+        setStatus('> Book Pass verified \u2713', 'success');
+        const enterBtn = E('gate-enter-btn');
+        if (enterBtn) enterBtn.style.display = '';
+        const disconnectBtn = E('gate-disconnect-btn');
+        if (disconnectBtn) disconnectBtn.style.display = '';
     } else {
         setStatus('> ACCESS DENIED: No Voxx Book Pass NFT found.', 'error');
         currentAccount = null;
