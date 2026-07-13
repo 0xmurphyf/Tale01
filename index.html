@@ -13,8 +13,7 @@
 <script type="importmap">
 {
   "imports": {
-    "@mysten/wallet-standard": "https://cdn.jsdelivr.net/npm/@mysten/wallet-standard@0/+esm",
-    "@mysten/sui/jsonRpc": "https://cdn.jsdelivr.net/npm/@mysten/sui@2.20.3/jsonRpc/+esm"
+    "@mysten/wallet-standard": "https://cdn.jsdelivr.net/npm/@mysten/wallet-standard@0/+esm"
   }
 }
 </script>
@@ -501,15 +500,11 @@
 
 <script type="module">
 import { getWallets } from '@mysten/wallet-standard';
-import { SuiJsonRpcClient } from '@mysten/sui/jsonRpc';
 
 const NFT_TYPES = [
     '0x67055493bd0e77362ba4af21c81acfdaafc7913d6c5cf75fbe1832e25544bc07::voxx_whitelist_pass::Nft',
     '0xe649354aa848a8ae43d52a2bf75301b3d67dd6654c8df525650c5afe86518dc5::voxx_book_pass::Nft',
 ];
-const MAINNET_RPC = 'https://fullnode.mainnet.sui.io:443';
-
-const rpcClient = new SuiJsonRpcClient({ url: MAINNET_RPC, network: 'mainnet' });
 
 const E = (id) => document.getElementById(id);
 
@@ -593,167 +588,52 @@ function showWalletList(wallets) {
     });
 }
 
-// ── NFT Ownership Check (Direct + Kiosk, optimized) ──
+// ── NFT Ownership Check via Surflux Indexing API ──
+// Surflux free tier: 250,000 credits/month. Holders query = 50 credits.
+// That's 5,000 verifications/month — more than enough.
+// Surflux indexes ALL NFTs including Kiosk-held, so no manual scanning needed.
 
-const RPC_TIMEOUT = 8000;
+const SURFLUX_API = 'https://api.surflux.dev';
+const SURFLUX_KEY = 'YOUR_SURFLUX_API_KEY'; // Get free key at https://dashboard.surflux.dev
 
-async function rpcCall(method, params) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), RPC_TIMEOUT);
+/** Fetch all holder addresses for a given NFT collection type */
+async function fetchCollectionHolders(collectionType) {
     try {
-        // Use client.call() as recommended by Mysten docs
-        return await rpcClient.call(method, params, { signal: ctrl.signal });
-    } finally {
-        clearTimeout(timer);
-    }
-}
-
-/** Path 1: Use client.getOwnedObjects() — the native method */
-async function checkDirectOwnership(address, structType) {
-    try {
-        const res = await rpcClient.getOwnedObjects({
-            owner: address,
-            filter: { StructType: structType },
-            options: { showType: true },
-            limit: 1,
-        });
-        return (res.data && res.data.length > 0);
+        const url = `${SURFLUX_API}/nfts/collection/${encodeURIComponent(collectionType)}/holders?page=0&perPage=500&api-key=${SURFLUX_KEY}`;
+        const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        // Return set of owner addresses (lowercased for comparison)
+        return new Set((data.items || []).map(h => h.owner.toLowerCase()));
     } catch (e) {
-        console.error('Direct scan error:', e);
-        return false;
-    }
-}
-
-/** Extract kiosk ID from KioskOwnerCap or PersonalKioskCap */
-function extractKioskId(obj) {
-    try {
-        const f = obj?.data?.content?.fields;
-        if (!f) return null;
-        // Standard KioskOwnerCap: fields.for
-        if (f.for) return f.for;
-        // PersonalKioskCap: fields.cap.fields.for
-        if (f.cap?.fields?.for) return f.cap.fields.for;
+        console.error('Surflux holders fetch error:', e);
         return null;
-    } catch (_) { return null; }
-}
-
-/** Path 2: Scan all kiosks in parallel, short-circuit on first match */
-async function checkKioskOwnership(address, structType) {
-    try {
-        // Step 1: Get all owned objects to find kiosk caps
-        const allRes = await rpcCall('suix_getOwnedObjects', [
-            address,
-            { filter: null, options: { showType: true, showContent: true } },
-            null, 50
-        ]);
-        if (!allRes.data) return false;
-
-        const kioskIds = new Set();
-        for (const obj of allRes.data) {
-            // Try extracting from KioskOwnerCap / PersonalKioskCap
-            const kid = extractKioskId(obj);
-            if (kid) kioskIds.add(kid);
-
-            // Also handle PersonalKioskCap: its type string contains "PersonalKioskCap"
-            const type = obj?.data?.type || '';
-            if (type.includes('PersonalKioskCap')) {
-                const f = obj?.data?.content?.fields;
-                const kioskField = f?.cap?.fields?.for || f?.for;
-                if (kioskField) kioskIds.add(kioskField);
-            }
-        }
-
-        if (kioskIds.size === 0) {
-            console.log('No kiosk caps found for', address);
-            return false;
-        }
-
-        console.log('Found kiosk IDs:', [...kioskIds]);
-
-        // Step 2: Scan all kiosks in parallel with Promise.race — return on first match
-        const scanPromises = [...kioskIds].map(kioskId => scanSingleKiosk(kioskId, [structType], address));
-
-        // Race: whichever kiosk finds the NFT first wins
-        const result = await Promise.race([
-            ...scanPromises,
-            // Safety timeout: 12s total for kiosk scan
-            new Promise(resolve => setTimeout(() => resolve(false), 12000))
-        ]);
-
-        return !!result;
-    } catch (e) {
-        console.error('Kiosk scan error:', e);
-        return false;
     }
 }
 
-async function scanSingleKiosk(kioskId, structTypes, expectedOwner) {
-    try {
-        // Quick check: verify kiosk owner matches if expectedOwner is provided
-        if (expectedOwner) {
-            const kioskRes = await rpcCall('sui_getObject', [kioskId, { showContent: true }]);
-            const kioskOwner = kioskRes?.data?.content?.fields?.owner;
-            if (kioskOwner && kioskOwner !== expectedOwner) {
-                console.log('Kiosk', kioskId, 'owner', kioskOwner, '!=', expectedOwner, '- skipping');
-                return false;
-            }
-        }
+// Cache holders list for 5 minutes to avoid repeated API calls
+const holdersCache = new Map(); // collectionType -> { holders: Set, ts: number }
+const CACHE_TTL = 5 * 60 * 1000; // 5 min
 
-        // Get dynamic fields (items in kiosk)
-        const dfRes = await rpcCall('suix_getDynamicFields', [kioskId, null, 50]);
-        if (!dfRes.data) return false;
-
-        const itemIds = dfRes.data
-            .filter(df => df.objectType && df.objectId)
-            .map(df => df.objectId);
-
-        if (itemIds.length === 0) return false;
-
-        // Batch check all item types in one call
-        const itemsRes = await rpcCall('sui_multiGetObjects', [
-            itemIds,
-            { showType: true }
-        ]);
-
-        if (!itemsRes) return false;
-
-        for (const item of itemsRes) {
-            if (item.error) continue;
-            if (structTypes.includes(item.data?.type)) return true;
-        }
-        return false;
-    } catch (e) {
-        console.error('Kiosk scan error for', kioskId, e);
-        return false;
+async function getCachedHolders(collectionType) {
+    const cached = holdersCache.get(collectionType);
+    if (cached && (Date.now() - cached.ts) < CACHE_TTL) {
+        return cached.holders;
     }
+    const holders = await fetchCollectionHolders(collectionType);
+    if (holders) {
+        holdersCache.set(collectionType, { holders, ts: Date.now() });
+    }
+    return holders;
 }
 
-/** Path 3: Find all kiosks where owner field matches address, scan them */
-async function checkAllKiosksByOwner(address, structType) {
-    // This path works even when user doesn't hold the KioskOwnerCap
-    // (e.g. cap was transferred but kiosk owner field still points to them)
-    // However, this is an expensive operation and not practical via public RPC.
-    // Instead, we rely on Path 1 (direct) + Path 2 (kiosk caps) as the primary methods.
-    // If the NFT is in a kiosk but the user has no cap, the kiosk owner field
-    // still says they own it — but they can't withdraw without the cap.
-    // For access-gating purposes, we consider kiosk owner = valid holder.
-    return false; // Not implemented via public RPC — would need indexer
-}
-
-/** Combined check: direct first (fast), then kiosk (parallel, race) */
+/** Check if address holds ANY of the required NFTs */
 async function checkNftOwnership(address) {
+    const addrLower = address.toLowerCase();
     for (const nftType of NFT_TYPES) {
-        // Path 1: Direct ownership — 1 RPC, fastest
-        const direct = await checkDirectOwnership(address, nftType);
-        if (direct) {
-            console.log('NFT found via direct ownership:', nftType);
-            return true;
-        }
-
-        // Path 2: Kiosk scan — parallel with race
-        const kiosk = await checkKioskOwnership(address, nftType);
-        if (kiosk) {
-            console.log('NFT found via kiosk:', nftType);
+        const holders = await getCachedHolders(nftType);
+        if (holders && holders.has(addrLower)) {
+            console.log('NFT found via Surflux:', nftType);
             return true;
         }
     }
