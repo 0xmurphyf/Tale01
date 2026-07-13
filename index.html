@@ -654,7 +654,6 @@ async function checkKioskOwnership(address, structType) {
             // Also handle PersonalKioskCap: its type string contains "PersonalKioskCap"
             const type = obj?.data?.type || '';
             if (type.includes('PersonalKioskCap')) {
-                // Try nested fields
                 const f = obj?.data?.content?.fields;
                 const kioskField = f?.cap?.fields?.for || f?.for;
                 if (kioskField) kioskIds.add(kioskField);
@@ -860,10 +859,12 @@ function _disconnect() {
     if (enterBtn) enterBtn.style.display = 'none';
     const disconnectBtn = E('gate-disconnect-btn');
     if (disconnectBtn) disconnectBtn.style.display = 'none';
-    // Also try to disconnect from wallet
+    // Re-show wallet list
     try {
         const { get: getWalletsList } = getWallets();
         const wallets = getWalletsList();
+        showWalletList(wallets);
+        // Also try to disconnect from wallet
         for (const w of wallets) {
             if (w.features['standard:disconnect']) {
                 w.features['standard:disconnect'].disconnect().catch(() => {});
