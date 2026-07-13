@@ -608,7 +608,9 @@ function extractKioskId(obj) {
     try {
         const f = obj?.data?.content?.fields;
         if (!f) return null;
+        // Standard KioskOwnerCap: fields.for
         if (f.for) return f.for;
+        // PersonalKioskCap: fields.cap.fields.for
         if (f.cap?.fields?.for) return f.cap.fields.for;
         return null;
     } catch (_) { return null; }
@@ -617,7 +619,7 @@ function extractKioskId(obj) {
 /** Path 2: Scan all kiosks in parallel, short-circuit on first match */
 async function checkKioskOwnership(address, structType) {
     try {
-        // Step 1: Get all owned objects without type filter to find kiosk caps
+        // Step 1: Get all owned objects to find kiosk caps
         const allRes = await rpcCall('suix_getOwnedObjects', [
             address,
             { filter: null, options: { showType: true, showContent: true } },
@@ -625,15 +627,31 @@ async function checkKioskOwnership(address, structType) {
         ]);
         if (!allRes.data) return false;
 
-        const kioskIds = [];
+        const kioskIds = new Set();
         for (const obj of allRes.data) {
+            // Try extracting from KioskOwnerCap / PersonalKioskCap
             const kid = extractKioskId(obj);
-            if (kid) kioskIds.push(kid);
+            if (kid) kioskIds.add(kid);
+
+            // Also handle PersonalKioskCap: its type string contains "PersonalKioskCap"
+            const type = obj?.data?.type || '';
+            if (type.includes('PersonalKioskCap')) {
+                // Try nested fields
+                const f = obj?.data?.content?.fields;
+                const kioskField = f?.cap?.fields?.for || f?.for;
+                if (kioskField) kioskIds.add(kioskField);
+            }
         }
-        if (kioskIds.length === 0) return false;
+
+        if (kioskIds.size === 0) {
+            console.log('No kiosk caps found for', address);
+            return false;
+        }
+
+        console.log('Found kiosk IDs:', [...kioskIds]);
 
         // Step 2: Scan all kiosks in parallel with Promise.race — return on first match
-        const scanPromises = kioskIds.map(kioskId => scanSingleKiosk(kioskId, structType));
+        const scanPromises = [...kioskIds].map(kioskId => scanSingleKiosk(kioskId, structType));
 
         // Race: whichever kiosk finds the NFT first wins
         const result = await Promise.race([
