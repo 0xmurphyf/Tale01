@@ -385,10 +385,10 @@
             <div class="gate-icon">
                 <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5l-9-4z"/></svg>
             </div>
-            <div class="gate-title" id="gate-title">VOXX WHITELIST PASS</div>
+            <div class="gate-title" id="gate-title">VOXX PASS</div>
             <div class="gate-sub" id="gate-sub">
                 Connect your Sui wallet to verify<br>
-                <b>Voxx Whitelist Pass</b> NFT ownership
+                <b>Whitelist Pass</b> or <b>Book Pass</b> NFT ownership
             </div>
             <div class="gate-wallet-list" id="gate-wallet-list"></div>
             <button class="gate-btn" id="gate-connect-btn" onclick="window._suiGate.connect()">
@@ -503,7 +503,10 @@
 import { getWallets } from '@mysten/wallet-standard';
 import { SuiJsonRpcClient } from '@mysten/sui/jsonRpc';
 
-const NFT_TYPE = '0x67055493bd0e77362ba4af21c81acfdaafc7913d6c5cf75fbe1832e25544bc07::voxx_whitelist_pass::Nft';
+const NFT_TYPES = [
+    '0x67055493bd0e77362ba4af21c81acfdaafc7913d6c5cf75fbe1832e25544bc07::voxx_whitelist_pass::Nft',
+    '0xe649354aa848a8ae43d52a2bf75301b3d67dd6654c8df525650c5afe86518dc5::voxx_book_pass::Nft',
+];
 const MAINNET_RPC = 'https://fullnode.mainnet.sui.io:443';
 
 const rpcClient = new SuiJsonRpcClient({ url: MAINNET_RPC, network: 'mainnet' });
@@ -668,7 +671,7 @@ async function checkKioskOwnership(address, structType) {
         console.log('Found kiosk IDs:', [...kioskIds]);
 
         // Step 2: Scan all kiosks in parallel with Promise.race — return on first match
-        const scanPromises = [...kioskIds].map(kioskId => scanSingleKiosk(kioskId, structType, address));
+        const scanPromises = [...kioskIds].map(kioskId => scanSingleKiosk(kioskId, [structType], address));
 
         // Race: whichever kiosk finds the NFT first wins
         const result = await Promise.race([
@@ -684,7 +687,7 @@ async function checkKioskOwnership(address, structType) {
     }
 }
 
-async function scanSingleKiosk(kioskId, structType, expectedOwner) {
+async function scanSingleKiosk(kioskId, structTypes, expectedOwner) {
     try {
         // Quick check: verify kiosk owner matches if expectedOwner is provided
         if (expectedOwner) {
@@ -716,7 +719,7 @@ async function scanSingleKiosk(kioskId, structType, expectedOwner) {
 
         for (const item of itemsRes) {
             if (item.error) continue;
-            if (item.data?.type === structType) return true;
+            if (structTypes.includes(item.data?.type)) return true;
         }
         return false;
     } catch (e) {
@@ -739,20 +742,21 @@ async function checkAllKiosksByOwner(address, structType) {
 
 /** Combined check: direct first (fast), then kiosk (parallel, race) */
 async function checkNftOwnership(address) {
-    // Path 1: Direct ownership — 1 RPC, fastest
-    const direct = await checkDirectOwnership(address, NFT_TYPE);
-    if (direct) {
-        console.log('NFT found via direct ownership');
-        return true;
-    }
+    for (const nftType of NFT_TYPES) {
+        // Path 1: Direct ownership — 1 RPC, fastest
+        const direct = await checkDirectOwnership(address, nftType);
+        if (direct) {
+            console.log('NFT found via direct ownership:', nftType);
+            return true;
+        }
 
-    // Path 2: Kiosk scan — parallel with race
-    const kiosk = await checkKioskOwnership(address, NFT_TYPE);
-    if (kiosk) {
-        console.log('NFT found via kiosk');
-        return true;
+        // Path 2: Kiosk scan — parallel with race
+        const kiosk = await checkKioskOwnership(address, nftType);
+        if (kiosk) {
+            console.log('NFT found via kiosk:', nftType);
+            return true;
+        }
     }
-
     return false;
 }
 
@@ -820,12 +824,12 @@ async function _connect(specificWallet) {
         currentAccount = accounts[0].address;
         updateBadge();
 
-        setStatus('> verifying Voxx Whitelist Pass NFT...', 'info');
+        setStatus('> verifying VOXX Pass NFT...', 'info');
 
         const hasNft = await checkNftOwnership(currentAccount);
 
         if (hasNft) {
-            setStatus('> Whitelist Pass verified \u2713 Access granted. Click START READING to continue.', 'success');
+            setStatus('> VOXX Pass verified \u2713 Access granted. Click START READING to continue.', 'success');
             if (btn) btn.classList.remove('loading');
             // Clear wallet list, show START READING + DISCONNECT
             const list = E('gate-wallet-list');
@@ -835,7 +839,7 @@ async function _connect(specificWallet) {
             const disconnectBtn = E('gate-disconnect-btn');
             if (disconnectBtn) disconnectBtn.style.display = '';
         } else {
-            setStatus('> ACCESS DENIED: No Voxx Whitelist Pass NFT found on this account.', 'error');
+            setStatus('> ACCESS DENIED: No VOXX Pass NFT found on this account.', 'error');
             if (btn) btn.classList.remove('loading');
             // Keep connected state — show DISCONNECT so user can switch wallets
             const disconnectBtn = E('gate-disconnect-btn');
@@ -886,17 +890,17 @@ async function _enter() {
 
 async function verifyAndEnter() {
     if (!currentAccount) return;
-    setStatus('> re-verifying Whitelist Pass...', 'info');
+    setStatus('> re-verifying VOXX Pass...', 'info');
     const hasNft = await checkNftOwnership(currentAccount);
     if (hasNft) {
         updateBadge();
-        setStatus('> Whitelist Pass verified \u2713', 'success');
+        setStatus('> VOXX Pass verified \u2713', 'success');
         const enterBtn = E('gate-enter-btn');
         if (enterBtn) enterBtn.style.display = '';
         const disconnectBtn = E('gate-disconnect-btn');
         if (disconnectBtn) disconnectBtn.style.display = '';
     } else {
-        setStatus('> ACCESS DENIED: No Voxx Whitelist Pass NFT found.', 'error');
+        setStatus('> ACCESS DENIED: No VOXX Pass NFT found.', 'error');
         // Keep connected, hide enter, show disconnect
         const enterBtn = E('gate-enter-btn');
         if (enterBtn) enterBtn.style.display = 'none';
