@@ -329,10 +329,38 @@
     .gate-wallet-item .wallet-name { flex: 1; text-align: left; }
     .gate-footer { margin-top: 24px; font-size: 0.6rem; color: #444; letter-spacing: 1px; }
     .gate-footer a { color: #555; }
-    .gate-connected-addr {
-        font-size: 0.66rem; color: #555; letter-spacing: 1px;
-        margin-bottom: 16px; word-break: break-all;
+    .gate-connected {
+        margin-bottom: 18px; padding: 12px 16px;
+        background: rgba(0,255,255,0.04); border: 1px solid rgba(0,255,255,0.2);
+        border-radius: 6px;
     }
+    .gate-connected-row {
+        display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+    }
+    .gate-dot {
+        width: 8px; height: 8px; border-radius: 50%; background: #0f8;
+        box-shadow: 0 0 8px #0f8; flex-shrink: 0;
+    }
+    .gate-connected-addr {
+        font-size: 0.7rem; color: #ccc; letter-spacing: 1px; word-break: break-all; text-align: left;
+    }
+    .gate-disconnect-btn {
+        width: 100%; padding: 8px; font-family: inherit; font-size: 0.68rem; letter-spacing: 2px;
+        background: transparent; border: 1px solid rgba(255,80,80,0.4); color: #f66;
+        border-radius: 4px; cursor: pointer; transition: 0.2s;
+    }
+    .gate-disconnect-btn:hover { background: rgba(255,80,80,0.12); border-color: #f44; }
+    /* topbar wallet badge */
+    .wallet-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 0.62rem; letter-spacing: 1px; color: #0aa;
+        border: 1px solid rgba(0,255,255,0.25); padding: 3px 8px; border-radius: 3px;
+        cursor: default;
+    }
+    .wallet-badge .wb-disconnect {
+        cursor: pointer; color: #f66; font-size: 0.7rem; margin-left: 2px; opacity: 0.6; transition: 0.2s;
+    }
+    .wallet-badge .wb-disconnect:hover { opacity: 1; }
 </style>
 </head>
 <body>
@@ -359,7 +387,13 @@
                 <span class="spinner"></span>
                 <span class="btn-label">CONNECT WALLET</span>
             </button>
-            <div class="gate-connected-addr" id="gate-addr" style="display:none;"></div>
+            <div class="gate-connected" id="gate-connected" style="display:none;">
+                <div class="gate-connected-row">
+                    <span class="gate-dot"></span>
+                    <span class="gate-connected-addr" id="gate-addr"></span>
+                </div>
+                <button class="gate-disconnect-btn" onclick="window._suiGate.disconnect()">DISCONNECT</button>
+            </div>
             <div class="gate-status info" id="gate-status">> detect wallet_</div>
             <div class="gate-footer">
                 Need a pass? <a href="https://voxx.app" target="_blank" rel="noopener">voxx.app</a>
@@ -376,7 +410,7 @@
             </div>
             <div class="book-title-display" id="book-title-display"></div>
             <div class="topbar-right">
-                <span class="wallet-badge" id="wallet-badge" style="display:none; font-size:0.62rem; letter-spacing:1px; color:#0aa; border:1px solid rgba(0,255,255,0.25); padding:3px 8px; border-radius:3px;"></span>
+                <span class="wallet-badge" id="wallet-badge" style="display:none;"><span id="wb-addr"></span><span class="wb-disconnect" onclick="window._suiGate.disconnect()" title="Disconnect">✕</span></span>
                 <button class="ctrl-btn" id="bookmarks-toggle" aria-label="Open bookmarks">★ <span class="lbl">Bookmarks</span></button>
                 <button class="ctrl-btn" id="focus-toggle" aria-label="Toggle focus mode">⛶ <span class="lbl">Focus</span></button>
             </div>
@@ -490,17 +524,22 @@ function showGate(show) {
 
 function updateBadge() {
     const badge = E('wallet-badge');
-    const addr = E('gate-addr');
-    if (!badge || !addr) return;
+    const wbAddr = E('wb-addr');
+    const connected = E('gate-connected');
+    const addrEl = E('gate-addr');
+    const btn = E('gate-connect-btn');
+
     if (currentAccount) {
         const short = currentAccount.slice(0, 6) + '...' + currentAccount.slice(-4);
-        badge.textContent = '⬡ ' + short;
-        badge.style.display = '';
-        addr.textContent = currentAccount;
-        addr.style.display = '';
+        if (wbAddr) wbAddr.textContent = '⬡ ' + short;
+        if (badge) badge.style.display = 'inline-flex';
+        if (addrEl) addrEl.textContent = currentAccount;
+        if (connected) connected.style.display = '';
+        if (btn) btn.style.display = 'none';
     } else {
-        badge.style.display = 'none';
-        addr.style.display = 'none';
+        if (badge) badge.style.display = 'none';
+        if (connected) connected.style.display = 'none';
+        if (btn) btn.style.display = '';
     }
 }
 
@@ -523,15 +562,30 @@ function showWalletList(wallets) {
 
 async function checkNftOwnership(address) {
     try {
-        const result = await rpcClient.core.listOwnedObjects({
+        const result = await rpcClient.getOwnedObjects({
             owner: address,
             filter: { StructType: NFT_TYPE },
-            include: { type: true },
+            options: { showType: true },
         });
         return (result.data && result.data.length > 0);
     } catch (err) {
         console.error('NFT check error:', err);
-        return false;
+        // Try fallback: call suix_getOwnedObjects via transport directly
+        try {
+            const raw = await rpcClient.transport.request({
+                method: 'suix_getOwnedObjects',
+                params: [
+                    address,
+                    { filter: { StructType: NFT_TYPE }, options: { showType: true } },
+                    null,
+                    50
+                ]
+            });
+            return (raw.data && raw.data.length > 0);
+        } catch (err2) {
+            console.error('NFT check fallback error:', err2);
+            return false;
+        }
     }
 }
 
@@ -555,6 +609,10 @@ async function _connect(specificWallet) {
 
         if (!specificWallet) {
             showWalletList(wallets);
+        } else {
+            // Specific wallet selected: clear list
+            const list = E('gate-wallet-list');
+            if (list) list.innerHTML = '';
         }
 
         setStatus('> connecting to ' + wallet.name + '...', 'info');
@@ -602,6 +660,9 @@ async function _connect(specificWallet) {
         if (hasNft) {
             setStatus('> Book Pass verified \u2713 Access granted.', 'success');
             if (btn) btn.classList.remove('loading');
+            // Clear wallet list, show connected state
+            const list = E('gate-wallet-list');
+            if (list) list.innerHTML = '';
             setTimeout(() => {
                 showGate(false);
                 gateResolve(currentAccount);
@@ -611,6 +672,9 @@ async function _connect(specificWallet) {
             if (btn) btn.classList.remove('loading');
             currentAccount = null;
             updateBadge();
+            // Re-show wallet list
+            const { get: getWalletsList } = getWallets();
+            showWalletList(getWalletsList());
         }
     } catch (err) {
         console.error('Wallet connect error:', err);
@@ -626,6 +690,16 @@ function _disconnect() {
     setStatus('> Wallet disconnected. Connect to continue.', 'info');
     const btn = E('gate-connect-btn');
     if (btn) btn.classList.remove('loading');
+    // Also try to disconnect from wallet
+    try {
+        const { get: getWalletsList } = getWallets();
+        const wallets = getWalletsList();
+        for (const w of wallets) {
+            if (w.features['standard:disconnect']) {
+                w.features['standard:disconnect'].disconnect().catch(() => {});
+            }
+        }
+    } catch (_) {}
 }
 
 async function verifyAndEnter() {
@@ -633,6 +707,7 @@ async function verifyAndEnter() {
     setStatus('> re-verifying Book Pass...', 'info');
     const hasNft = await checkNftOwnership(currentAccount);
     if (hasNft) {
+        updateBadge();
         showGate(false);
         gateResolve(currentAccount);
     } else {
