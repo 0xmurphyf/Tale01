@@ -440,8 +440,8 @@ window.__FULL_EPUB_URL__ = "dark_transcendence.epub";</script>
             el('upload-screen').style.display = 'none';
             el('reading-pane').style.display = 'block';
             el('reader-header').classList.add('show');
-            el('sidebar').classList.add('show');
             el('menu-toggle-btn').style.display = 'inline-block';
+            // Sidebar hidden by default — user toggles via ☰ button
             if (localStorage.getItem('voxx_focus') === '1') document.body.classList.add('focus-mode');
 
             await goToChapter(0);
