@@ -482,7 +482,7 @@ window.__FULL_EPUB_URL__ = "dark_transcendence.epub";</script>
             } else if (epubSource === 'external') {
                 statusEl.textContent = '> loading full volume...';
                 const resp = await fetch(window.__FULL_EPUB_URL__);
-                if (!resp.ok) throw new Error('Failed to fetch EPUB: ' + resp.status);
+                if (!resp.ok) throw new Error('Failed to fetch EPUB: HTTP ' + resp.status);
                 buf = await resp.arrayBuffer();
             } else if (epubSource instanceof ArrayBuffer) {
                 buf = epubSource;
@@ -536,10 +536,15 @@ window.__FULL_EPUB_URL__ = "dark_transcendence.epub";</script>
             if (localStorage.getItem('voxx_focus') === '1') document.body.classList.add('focus-mode');
 
             await goToChapter(0);
+            return true;
         } catch (err) {
-            console.error(err);
-            statusEl.textContent = '> ERROR: Could not parse this file as a valid EPUB archive.';
-            statusEl.className = 'upload-status error';
+            console.error('[EPUB LOAD]', epubSource, err);
+            if (epubSource === 'inline') {
+                // Nothing else is shown — surface the blocking error
+                statusEl.textContent = '> ERROR: Could not parse this file as a valid EPUB archive.';
+                statusEl.className = 'upload-status error';
+            }
+            return false;
         }
     }
 
@@ -944,9 +949,10 @@ window.__FULL_EPUB_URL__ = "dark_transcendence.epub";</script>
 
         // Load the full EPUB via API with JWT token
         (async function loadFullEpub() {
+            let token = null;
             try {
                 // Get token from sessionStorage (set by gate before loading reader)
-                let token = sessionStorage.getItem('voxx-jwt');
+                token = sessionStorage.getItem('voxx-jwt');
                 if (token) {
                     // Override the URL to use the API endpoint with auth
                     window.__FULL_EPUB_URL__ = '/api/epub';
@@ -963,7 +969,21 @@ window.__FULL_EPUB_URL__ = "dark_transcendence.epub";</script>
             } catch(e) {
                 console.error('Failed to set up authenticated EPUB loading:', e);
             }
-            loadEmbeddedEpub('external');
+
+            // Attempt full-volume load; retry once on transient failure.
+            let ok = await loadEmbeddedEpub('external');
+            if (!ok && token) {
+                console.warn('[EPUB] first attempt failed, retrying once...');
+                await new Promise(r => setTimeout(r, 1500));
+                ok = await loadEmbeddedEpub('external');
+            }
+            if (!ok && token) {
+                const bar = document.createElement('div');
+                bar.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:400;background:rgba(40,0,0,.9);border:1px solid #f55;color:#fbb;padding:10px 16px;font-size:11px;letter-spacing:1px;border-radius:6px;max-width:90vw;text-align:center';
+                bar.textContent = '⚠ Full volume failed to load (session expired?). Refresh or re-enter from the gate.';
+                document.body.appendChild(bar);
+                setTimeout(() => bar.remove(), 6000);
+            }
         })();
     });
 })();

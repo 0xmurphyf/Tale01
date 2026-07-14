@@ -56,11 +56,6 @@ function authMiddleware(req, res, next) {
   const token = authHeader.slice(7);
   try {
     const decoded = jwt.verify(token, CONFIG.JWT_SECRET);
-    // Verify IP binding (prevent token sharing across IPs)
-    const currentIp = req.ip || req.socket.remoteAddress || '';
-    if (decoded.ipHash && decoded.ipHash !== hashIp(currentIp)) {
-      return res.status(401).json({ error: 'Token bound to different IP' });
-    }
     req.user = decoded;
     next();
   } catch (err) {
@@ -69,10 +64,6 @@ function authMiddleware(req, res, next) {
     }
     return res.status(401).json({ error: 'Token invalid' });
   }
-}
-
-function hashIp(ip) {
-  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 16);
 }
 
 // ── Health ──
@@ -102,11 +93,9 @@ app.post('/api/verify', rateLimit, async (req, res) => {
 });
 
 function issueToken(address, req) {
-  const ip = req.ip || req.socket.remoteAddress || '';
   return jwt.sign(
     {
       address,
-      ipHash: hashIp(ip),
       verifiedAt: Date.now(),
       jti: crypto.randomBytes(8).toString('hex'),  // Unique token ID
     },
