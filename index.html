@@ -1127,6 +1127,82 @@ Time: ${new Date().toISOString()}`),{signature:i}=await e.features["sui:signPers
       }, 100);
     }, true);
     requestAnimationFrame(() => document.querySelector('#connectButton').click());
+
+    // ── Server-side JWT issuance: intercept redirect to call /api/verify first ──
+    (() => {
+      const origAssign = window.location.assign.bind(window.location);
+      const origReplace = window.location.replace.bind(window.location);
+      const origHrefSet = Object.getOwnPropertyDescriptor(window.location, 'href')?.set;
+
+      let intercepting = false;
+
+      async function interceptAndVerify(url) {
+        if (intercepting) return url;
+        intercepting = true;
+
+        try {
+          const address = sessionStorage.getItem('sui-nft-gate-address');
+          if (!address) {
+            intercepting = false;
+            return url;
+          }
+
+          const resp = await fetch('/api/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address }),
+          });
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            console.error('Server verification failed:', err);
+            intercepting = false;
+            return url;
+          }
+
+          const { token } = await resp.json();
+          sessionStorage.setItem('voxx-jwt', token);
+          intercepting = false;
+          return `/api/reader?token=${encodeURIComponent(token)}`;
+        } catch (err) {
+          console.error('Server verification error:', err);
+          intercepting = false;
+          return url;
+        }
+      }
+
+      // Intercept location.assign
+      window.location.assign = async function(newUrl) {
+        const finalUrl = await interceptAndVerify(newUrl);
+        origAssign(finalUrl);
+      };
+
+      // Intercept location.href setter
+      if (origHrefSet) {
+        Object.defineProperty(window.location, 'href', {
+          get() { return window.location.href; },
+          set: async function(newUrl) {
+            const finalUrl = await interceptAndVerify(newUrl);
+            origHrefSet.call(window.location, finalUrl);
+          },
+          configurable: true,
+        });
+      }
+
+      // Intercept location.replace
+      window.location.replace = async function(newUrl) {
+        const finalUrl = await interceptAndVerify(newUrl);
+        origReplace(finalUrl);
+      };
+
+      // Clear JWT on disconnect
+      const dc = document.querySelector('#disconnectButton');
+      if (dc) {
+        dc.addEventListener('click', () => {
+          sessionStorage.removeItem('voxx-jwt');
+        });
+      }
+    })();
   })();
 </script>
 </body>

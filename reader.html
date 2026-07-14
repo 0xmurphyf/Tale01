@@ -848,8 +848,34 @@ window.__FULL_EPUB_URL__ = "dark_transcendence.epub";</script>
         // Load preview EPUB immediately (first 2 chapters inline)
         loadEmbeddedEpub('inline');
 
-        // Load the full EPUB from external file
-        loadEmbeddedEpub('external');
+        // Load the full EPUB via API with JWT token
+        (async function loadFullEpub() {
+            try {
+                // Get token from URL query or sessionStorage
+                const params = new URLSearchParams(window.location.search);
+                let token = params.get('token');
+                if (!token) {
+                    token = sessionStorage.getItem('voxx-jwt');
+                }
+                if (token) {
+                    sessionStorage.setItem('voxx-jwt', token);
+                    // Override the URL to use the API endpoint with auth
+                    window.__FULL_EPUB_URL__ = '/api/epub';
+                    const origFetch = window.fetch;
+                    window.fetch = function(url, opts) {
+                        if (url === '/api/epub') {
+                            opts = opts || {};
+                            opts.headers = opts.headers || {};
+                            opts.headers['Authorization'] = 'Bearer ' + token;
+                        }
+                        return origFetch.call(window, url, opts);
+                    };
+                }
+            } catch(e) {
+                console.error('Failed to set up authenticated EPUB loading:', e);
+            }
+            loadEmbeddedEpub('external');
+        })();
     });
 })();
 </script>
