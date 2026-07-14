@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Config ──
 const CONFIG = {
-  PORT: parseInt(process.env.PORT || '3000', 10),
+  PORT: 3000,
   NFT_TYPE: '0xe649354aa848a8ae43d52a2bf75301b3d67dd6654c8df525650c5afe86518dc5::voxx_book_pass::Nft',
   NETWORK: process.env.SUI_NETWORK || 'mainnet',
   JWT_SECRET: process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex'),
