@@ -21,7 +21,7 @@
     .title{margin:0 0 8px;color:#fff;font-size:16px;font-weight:400;letter-spacing:4px}
     .sub{margin:0 0 12px;color:var(--muted);font-size:11.5px;line-height:1.65}
     .sub b{color:var(--cyan);font-weight:400}
-    .scan-scope{margin:0 0 26px;color:#526363;font-size:9.5px;letter-spacing:1px;text-transform:uppercase}
+    .scan-scope{margin:0 0 26px;color:#526363;font-size:9.5px;letter-spacing:1px;text-transform:uppercase;line-height:1.6}
     .button{display:inline-flex;align-items:center;justify-content:center;min-width:194px;min-height:45px;padding:14px 32px;border:1px solid var(--cyan);background:var(--cyan-faint);color:var(--cyan);font-size:13px;letter-spacing:2px;cursor:pointer;transition:background .18s,box-shadow .18s,color .18s;box-shadow:0 0 12px rgba(0,255,255,.08)}
     .button:hover{background:rgba(0,255,255,.12);box-shadow:0 0 18px rgba(0,255,255,.22)}
     .button:disabled{opacity:.48;cursor:wait}
@@ -100,7 +100,7 @@
       <div class="classification">Restricted // Clearance Required</div>
       <h1 class="title" id="siteName">VOXX CLASSIFIED</h1>
       <p class="sub">Authenticate an authorized Sui identity<br>to access the <b>restricted archive</b></p>
-      <p class="scan-scope">On-chain clearance protocol · Primary + Linked Vaults</p>
+      <p class="scan-scope">On-chain clearance protocol<br>Primary + Linked Vaults</p>
       <button class="button" id="connectButton">INITIALIZE IDENTITY ACCESS</button>
       <div class="sheet hidden" id="walletPanel"><div class="sheet-card"><div class="sheet-head"><h3>SELECT IDENTITY INTERFACE</h3><button class="close" id="closeWallets" aria-label="Close">×</button></div><div class="wallet-list" id="walletList"></div></div></div>
       <div class="status hidden" id="status" data-kind="loading"><span id="statusText"></span></div>
@@ -1091,14 +1091,13 @@ Time: ${new Date().toISOString()}`),{signature:i}=await e.features["sui:signPers
           if (walletName) walletName.textContent = provider.name;
           const detail = wallet.querySelector('small');
           if (detail) detail.textContent = 'INTERFACE ONLINE · AUTHENTICATE';
-          // Replace img or mark span with provider SVG icon
-          const iconEl = wallet.querySelector('img') || wallet.querySelector('.wallet-mark');
-          if (iconEl) {
-            const svgWrap = document.createElement('span');
-            svgWrap.className = 'wallet-mark';
-            svgWrap.innerHTML = provider.svg;
-            svgWrap.style.color = '#0ff';
-            iconEl.replaceWith(svgWrap);
+          // Keep the wallet's original <img> icon if present, otherwise add SVG fallback
+          if (!wallet.querySelector('img') && !wallet.querySelector('.wallet-mark')) {
+            const iconWrap = document.createElement('span');
+            iconWrap.className = 'wallet-mark';
+            iconWrap.style.color = '#0ff';
+            iconWrap.innerHTML = provider.svg;
+            wallet.prepend(iconWrap);
           }
           fragment.append(wallet);
         } else {
