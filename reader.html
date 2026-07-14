@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#010101">
+<meta name="color-scheme" content="dark">
+<title>VOXX Archives</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+    :root {
+        --c-cyan: #0ff;
+        --c-cyan-dim: #0aa;
+        --c-red: #f00;
+        --c-bg: #010101;
+        --c-text: #e0e0e0;
+        --c-text-dim: #888;
+        --c-text-faint: #555;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+        font-family: 'Share Tech Mono', 'Courier New', monospace;
+        background-color: var(--c-bg); color: var(--c-text);
+        overflow: hidden;
+        background-image:
+            linear-gradient(rgba(0,255,255,0.01) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,255,255,0.01) 1px, transparent 1px);
+        background-size: 90px 90px; background-attachment: fixed;
+    }
+    a, button { font-family: inherit; }
+    :focus-visible { outline: 2px solid var(--c-cyan); outline-offset: 3px; border-radius: 2px; }
+
+    /* background texture layers, same as main terminal */
+    .noise-layer {
+        position: fixed; inset: 0; pointer-events: none; z-index: 9998; opacity: 0.035; mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+    .scanlines {
+        position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+        background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 2px);
+    }
+    .ambient-glow {
+        position: fixed; inset: 0; pointer-events: none; z-index: 1;
+        background: radial-gradient(ellipse at 20% 0%, rgba(0,255,255,0.05), transparent 55%),
+                    radial-gradient(ellipse at 80% 100%, rgba(0,255,255,0.04), transparent 55%);
+    }
+
+    /* ===== App shell ===== */
+    .app { position: relative; z-index: 10; display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+    .topbar {
+        flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+        padding: 12px 24px; background: linear-gradient(180deg, rgba(0,20,20,0.95), rgba(0,0,0,0.85));
+        border-bottom: 1px solid rgba(0,255,255,0.25); flex-wrap: wrap;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 12px; }
+    .logo { font-size: 1.3rem; letter-spacing: 6px; color: var(--c-cyan); text-shadow: 0 0 10px var(--c-cyan), 0 0 25px rgba(0,255,255,0.4); }
+    .logo-sub { font-size: 0.62rem; letter-spacing: 2px; color: var(--c-text-faint); border-left: 1px solid rgba(0,255,255,0.25); padding-left: 12px; }
+    .book-title-display { font-size: 0.75rem; letter-spacing: 1px; color: var(--c-text-dim); max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .shell { flex: 1; min-height: 0; display: flex; }
+
+    /* ===== Sidebar TOC ===== */
+    .sidebar {
+        width: 260px; flex-shrink: 0; height: 100%; overflow-y: auto;
+        background: linear-gradient(180deg, rgba(0,25,25,0.85), rgba(0,8,8,0.78));
+        border-right: 1px solid rgba(0,255,255,0.12); padding: 18px 0;
+        display: none;
+    }
+    .sidebar.show { display: block; }
+    .sidebar-label { font-size: 0.65rem; letter-spacing: 3px; color: #0aa; padding: 0 20px 12px; text-transform: uppercase; }
+    .toc-item {
+        display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+        color: #666; font-size: 0.78rem; letter-spacing: 0.5px; padding: 10px 20px;
+        border-left: 2px solid transparent; transition: 0.2s; line-height: 1.4;
+    }
+    .toc-item:hover { color: #fff; background: rgba(0,255,255,0.04); }
+    .toc-item.active { color: #0ff; border-left-color: #0ff; background: rgba(0,255,255,0.06); text-shadow: 0 0 6px rgba(0,255,255,0.4); }
+    .toc-item.nested { padding-left: 34px; font-size: 0.72rem; }
+
+    /* ===== Main reading column ===== */
+    .main { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; }
+
+    .reader-header {
+        flex-shrink: 0; padding: 10px 24px; background: rgba(2,6,6,0.97);
+        border-bottom: 1px solid rgba(0,255,255,0.15); box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+        display: none; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    }
+    .reader-header.show { display: flex; }
+    .reader-path { color: #0aa; font-size: 0.75rem; letter-spacing: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reader-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .ctrl-btn {
+        background: transparent; border: 1px solid rgba(0,255,255,0.35); color: var(--c-cyan-dim);
+        font-size: 0.7rem; letter-spacing: 1px; padding: 6px 12px; border-radius: 4px; cursor: pointer; transition: 0.2s;
+    }
+    .ctrl-btn:hover:not(:disabled) { border-color: #0ff; color: #0ff; box-shadow: 0 0 10px rgba(0,255,255,0.2); }
+    .ctrl-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .progress-label { font-size: 0.68rem; color: #555; letter-spacing: 1px; white-space: nowrap; }
+
+    .reading-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+    .reading-pane {
+        max-width: 1100px; margin: 0 auto; padding: 50px 40px 90px;
+        font-family: 'Source Serif 4', Georgia, serif; font-size: 1.05rem; line-height: 1.85; color: #d8d8d8;
+        user-select: none; -webkit-user-select: none;
+    }
+    .reading-pane h1, .reading-pane h2, .reading-pane h3 {
+        font-family: 'Share Tech Mono', monospace; color: #0ff; letter-spacing: 1px;
+        text-shadow: 0 0 10px rgba(0,255,255,0.25); margin: 1.6em 0 0.6em; line-height: 1.4;
+    }
+    .reading-pane h1:first-child, .reading-pane h2:first-child, .reading-pane h3:first-child { margin-top: 0; }
+    .reading-pane p { margin-bottom: 1.1em; }
+    .reading-pane img { max-width: 100%; height: auto; display: block; margin: 1.5em auto; border: 1px solid rgba(0,255,255,0.15); -webkit-user-drag: none; pointer-events: none; }
+    .reading-pane a { color: #0ff; }
+    .reading-pane blockquote { border-left: 2px solid rgba(0,255,255,0.3); padding-left: 18px; color: #999; font-style: italic; margin: 1.2em 0; }
+    .reading-pane hr { border: none; border-top: 1px solid rgba(0,255,255,0.15); margin: 2em 0; }
+
+    /* ===== Upload / drop screen ===== */
+    .upload-screen { flex: 1; display: flex; align-items: center; justify-content: center; padding: 30px; }
+    .upload-panel {
+        position: relative; max-width: 520px; width: 100%; text-align: center;
+        border: 1px solid rgba(0,255,255,0.2); border-radius: 4px; background: rgba(4,10,10,0.55); padding: 50px 36px;
+    }
+    .u-corner { position: absolute; width: 18px; height: 18px; pointer-events: none; }
+    .u-corner.tl { top: -1px; left: -1px; border-top: 2px solid #0ff; border-left: 2px solid #0ff; }
+    .u-corner.tr { top: -1px; right: -1px; border-top: 2px solid #0ff; border-right: 2px solid #0ff; }
+    .u-corner.bl { bottom: -1px; left: -1px; border-bottom: 2px solid #0ff; border-left: 2px solid #0ff; }
+    .u-corner.br { bottom: -1px; right: -1px; border-bottom: 2px solid #0ff; border-right: 2px solid #0ff; }
+    .upload-icon { width: 56px; height: 56px; margin: 0 auto 20px; color: #0ff; filter: drop-shadow(0 0 10px rgba(0,255,255,0.5)); }
+    .upload-title { font-size: 1.1rem; letter-spacing: 3px; color: #fff; margin-bottom: 10px; }
+    .upload-sub { font-size: 0.8rem; color: #777; margin-bottom: 28px; line-height: 1.6; }
+    .upload-btn {
+        display: inline-block; border: 1px solid #0ff; color: #0ff; background: transparent;
+        padding: 12px 30px; font-size: 0.8rem; letter-spacing: 2px; border-radius: 4px; cursor: pointer; transition: 0.3s;
+    }
+    .upload-btn:hover { background: #0ff; color: #000; box-shadow: 0 0 20px rgba(0,255,255,0.4); }
+    .upload-panel.dragover { border-color: #0ff; box-shadow: 0 0 30px rgba(0,255,255,0.15); }
+    .upload-status { margin-top: 18px; font-size: 0.72rem; letter-spacing: 1px; color: #f90; min-height: 1.2em; }
+    .upload-status.error { color: #f00; }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #050505; }
+    ::-webkit-scrollbar-thumb { background: rgba(0,255,255,0.2); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(0,255,255,0.4); }
+
+    @media (max-width: 760px) {
+        .sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 200; transform: translateX(-100%); transition: transform 0.3s; }
+        .sidebar.show { display: block; transform: translateX(0); }
+        .book-title-display { display: none; }
+        .reading-pane { padding: 30px 20px 70px; font-size: 1rem; }
+        .reader-header { padding: 10px 16px; }
+        .progress-label { display: none; }
+        .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 190; }
+        .sidebar-backdrop.show { display: block; }
+        .topbar-right .lbl { display: none; }
+    }
+
+    /* ===== Topbar right controls ===== */
+    .topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    .topbar-right .ctrl-btn { padding: 6px 12px; }
+
+    /* ===== Add-bookmark button in reader header ===== */
+    .ctrl-btn.bookmark-add { border-color: rgba(255,200,0,0.55); color: #fc0; }
+    .ctrl-btn.bookmark-add:hover:not(:disabled) { border-color: #fc0; color: #fc0; box-shadow: 0 0 10px rgba(255,200,0,0.25); }
+
+    /* ===== Bookmarks drawer ===== */
+    .bookmarks-drawer {
+        position: fixed; top: 0; right: 0; bottom: 0; width: 320px; max-width: 86vw; z-index: 210;
+        background: linear-gradient(180deg, rgba(0,25,25,0.97), rgba(0,8,8,0.95));
+        border-left: 1px solid rgba(0,255,255,0.25); padding: 18px 0;
+        display: none; flex-direction: column; transform: translateX(100%); transition: transform 0.28s ease;
+    }
+    .bookmarks-drawer.show { display: flex; transform: translateX(0); }
+    .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 0 20px 12px; }
+    .drawer-label { font-size: 0.7rem; letter-spacing: 3px; color: #0aa; text-transform: uppercase; }
+    .bm-add { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid rgba(0,255,255,0.12); }
+    .bm-input {
+        width: 100%; background: rgba(0,0,0,0.4); border: 1px solid rgba(0,255,255,0.25); color: #e0e0e0;
+        font-family: inherit; font-size: 0.8rem; padding: 9px 11px; border-radius: 4px; letter-spacing: 0.5px;
+    }
+    .bm-input:focus { outline: none; border-color: #0ff; box-shadow: 0 0 10px rgba(0,255,255,0.2); }
+    .bm-save { width: 100%; border-color: rgba(255,200,0,0.55); color: #fc0; }
+    .bm-save:hover { background: rgba(255,200,0,0.1); border-color: #fc0; }
+    .bm-saved-hint { font-size: 0.7rem; color: #4f4; letter-spacing: 1px; min-height: 1em; opacity: 0; transition: opacity 0.2s; text-align: center; }
+    .bm-saved-hint.show { opacity: 1; }
+    .bm-list { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .bm-empty { color: #666; font-size: 0.76rem; line-height: 1.6; padding: 8px 4px; }
+    .bm-empty b { color: #0aa; }
+    .bm-item { display: flex; align-items: stretch; gap: 8px; }
+    .bm-goto {
+        flex: 1; min-width: 0; text-align: left; background: rgba(0,255,255,0.03); border: 1px solid rgba(0,255,255,0.18);
+        border-radius: 4px; padding: 10px 12px; cursor: pointer; color: #d8d8d8; transition: 0.2s;
+    }
+    .bm-goto:hover { background: rgba(0,255,255,0.08); border-color: #0ff; }
+    .bm-chapter { font-size: 0.74rem; color: #0ff; letter-spacing: 0.5px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bm-note { font-size: 0.78rem; color: #cfcfcf; line-height: 1.4; margin-bottom: 4px; word-break: break-word; }
+    .bm-meta { font-size: 0.64rem; color: #555; letter-spacing: 1px; }
+    .bm-del {
+        flex-shrink: 0; width: 34px; background: transparent; border: 1px solid rgba(255,80,80,0.3); color: #f66;
+        border-radius: 4px; cursor: pointer; font-size: 0.8rem; transition: 0.2s;
+    }
+    .bm-del:hover { background: rgba(255,80,80,0.12); border-color: #f44; color: #f44; }
+    .bookmarks-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 205; }
+    .bookmarks-backdrop.show { display: block; }
+
+    /* ===== Bookmarks inside the left sidebar ===== */
+    .sidebar-section { padding-top: 4px; border-bottom: 1px solid rgba(0,255,255,0.1); margin-bottom: 4px; }
+    .sidebar-label-row { display: flex; align-items: center; justify-content: space-between; }
+    .bm-add-mini {
+        background: transparent; border: 1px solid rgba(255,200,0,0.5); color: #fc0;
+        font-size: 0.72rem; padding: 2px 10px; border-radius: 4px; cursor: pointer; letter-spacing: 1px; transition: 0.2s;
+    }
+    .bm-add-mini:hover { background: rgba(255,200,0,0.12); border-color: #fc0; }
+    .bm-list-sidebar { display: flex; flex-direction: column; gap: 1px; padding: 6px 8px 12px; }
+    .bm-item-sidebar { display: flex; align-items: stretch; gap: 2px; }
+    .bm-sidebar-goto {
+        flex: 1; min-width: 0; text-align: left; background: none; border: none; border-left: 2px solid transparent;
+        color: #9aa; cursor: pointer; padding: 8px 10px; transition: 0.2s; border-radius: 0 3px 3px 0;
+    }
+    .bm-sidebar-goto:hover { background: rgba(255,200,0,0.07); border-left-color: #fc0; color: #fff; }
+    .bm-sidebar-ch { display: block; font-size: 0.6rem; letter-spacing: 1px; color: #fc0; margin-bottom: 2px; }
+    .bm-sidebar-note {
+        display: block; font-size: 0.74rem; color: #cfcfcf; line-height: 1.35;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .bm-sidebar-del {
+        flex-shrink: 0; width: 26px; background: transparent; border: none; color: #a66;
+        cursor: pointer; font-size: 0.72rem; border-radius: 3px; transition: 0.2s;
+    }
+    .bm-sidebar-del:hover { background: rgba(255,80,80,0.14); color: #f66; }
+    .bm-empty-sidebar { color: #555; font-size: 0.68rem; padding: 6px 12px 14px; line-height: 1.5; }
+
+    /* ===== Focus / zen mode ===== */
+    body.focus-mode .topbar,
+    body.focus-mode .sidebar,
+    body.focus-mode .sidebar-backdrop,
+    body.focus-mode .reader-header { display: none !important; }
+    body.focus-mode .app { height: 100vh; height: 100dvh; }
+    body.focus-mode .shell { height: 100%; }
+    body.focus-mode .reading-pane { max-width: min(1400px, 94vw); padding: 6vh 4vw 16vh; }
+    body.focus-mode .reading-scroll { background: rgba(1,1,1,0); }
+
+    .focus-bar {
+        display: none; position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 300;
+        gap: 8px; padding: 8px 10px; flex-wrap: wrap; justify-content: center; max-width: 94vw;
+        border-radius: 30px; background: rgba(0,12,12,0.85); border: 1px solid rgba(0,255,255,0.3);
+        backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+    }
+    body.focus-mode .focus-bar { display: flex; }
+    .focus-bar .ctrl-btn { padding: 8px 12px; font-size: 0.8rem; }
+
+</style>
+</head>
+<body>
+    <div class="ambient-glow" aria-hidden="true"></div>
+    <div class="scanlines" aria-hidden="true"></div>
+    <div class="noise-layer" aria-hidden="true"></div>
+
+    <div class="app">
+        <div class="topbar">
+            <div class="topbar-left">
+                <button class="ctrl-btn" id="menu-toggle-btn" style="display:none;" onclick="toggleSidebar()" aria-label="Toggle table of contents">☰</button>
+                <div class="logo">VOXX</div>
+                <div class="logo-sub">ARCHIVE</div>
+            </div>
+            <div class="book-title-display" id="book-title-display"></div>
+            <div class="topbar-right">
+                <button class="ctrl-btn" id="bookmarks-toggle" aria-label="Open bookmarks">★ <span class="lbl">Bookmarks</span></button>
+                <button class="ctrl-btn" id="focus-toggle" aria-label="Toggle focus mode">⛶ <span class="lbl">Focus</span></button>
+            </div>
+        </div>
+
+        <div class="shell">
+            <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar(false)"></div>
+            <nav class="sidebar" id="sidebar" aria-label="Table of contents">
+                <div class="sidebar-section">
+                    <div class="sidebar-label sidebar-label-row">
+                        <span>Bookmarks</span>
+                        <button class="bm-add-mini" id="bm-add-inline" title="Add bookmark here (B)" aria-label="Add bookmark">＋</button>
+                    </div>
+                    <div id="bm-list-sidebar" class="bm-list-sidebar"></div>
+                </div>
+                <div class="sidebar-label">Contents</div>
+                <div id="toc-list"></div>
+            </nav>
+
+            <div class="main">
+                <div class="reader-header" id="reader-header">
+                    <div class="reader-path" id="reader-path">&gt; </div>
+                    <div class="reader-controls">
+                        <span class="progress-label" id="progress-label"></span>
+                        <button class="ctrl-btn bookmark-add" id="add-bm-btn" title="Bookmark this position (B)" aria-label="Bookmark this position">＋ Bookmark</button>
+                        <button class="ctrl-btn" id="font-dec-btn" onclick="adjustFont(-1)" aria-label="Decrease text size">A−</button>
+                        <button class="ctrl-btn" id="font-inc-btn" onclick="adjustFont(1)" aria-label="Increase text size">A+</button>
+                        <button class="ctrl-btn" id="prev-btn" onclick="goToChapter(currentSpineIndex - 1)">‹ Prev</button>
+                        <button class="ctrl-btn" id="next-btn" onclick="goToChapter(currentSpineIndex + 1)">Next ›</button>
+                    </div>
+                </div>
+
+                <div class="reading-scroll" id="reading-scroll">
+                    <div class="upload-screen" id="upload-screen">
+                        <div class="upload-panel" id="upload-panel">
+                            <span class="u-corner tl"></span><span class="u-corner tr"></span>
+                            <span class="u-corner bl"></span><span class="u-corner br"></span>
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3">
+                                <path d="M12 2a10 10 0 1 0 10 10"/>
+                            </svg>
+                            <div class="upload-title">LOADING ARCHIVE</div>
+                            <div class="upload-sub">Decrypting bound volume...<br>This is a read-only viewer — downloading or extracting the source file is disabled.</div>
+                            <div class="upload-status" id="upload-status">&gt; please wait_</div>
+                        </div>
+                    </div>
+                    <div class="reading-pane" id="reading-pane" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bookmarks drawer -->
+    <div class="bookmarks-backdrop" id="bookmarks-backdrop" onclick="toggleBookmarks(false)"></div>
+    <aside class="bookmarks-drawer" id="bookmarks-drawer" aria-label="Bookmarks">
+        <div class="drawer-head">
+            <span class="drawer-label">Bookmarks</span>
+            <button class="ctrl-btn" id="bookmarks-close" aria-label="Close bookmarks">✕</button>
+        </div>
+        <div class="bm-add">
+            <input type="text" id="bm-note-input" class="bm-input" placeholder="Note (optional) — what's here?" maxlength="140" autocomplete="off" />
+            <button class="ctrl-btn bm-save" id="bm-save-btn">＋ Save here</button>
+            <div class="bm-saved-hint" id="bm-saved-hint"></div>
+        </div>
+        <div class="bm-list" id="bm-list"></div>
+    </aside>
+
+    <!-- Focus mode floating bar -->
+    <div class="focus-bar" id="focus-bar">
+        <button class="ctrl-btn" onclick="goToChapter(currentSpineIndex - 1)" aria-label="Previous chapter" title="Previous chapter">‹</button>
+        <button class="ctrl-btn" id="focus-add-bm" title="Add bookmark (B)">＋</button>
+        <button class="ctrl-btn" id="focus-bm-list" title="Bookmarks">★</button>
+        <button class="ctrl-btn" onclick="adjustFont(-1)" title="Smaller text">A−</button>
+        <button class="ctrl-btn" onclick="adjustFont(1)" title="Larger text">A+</button>
+        <button class="ctrl-btn" onclick="goToChapter(currentSpineIndex + 1)" aria-label="Next chapter" title="Next chapter">›</button>
+        <button class="ctrl-btn" id="focus-exit" title="Exit focus mode (Esc)" aria-label="Exit focus mode">⛶</button>
+    </div>
+
+<script>window.__EMBEDDED_EPUB_B64__ = "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";
+window.__FULL_EPUB_URL__ = "dark_transcendence.epub";</script>
+<script>
+(() => {
+    'use strict';
+
+    let zip = null;
+    let opfDir = '';          // folder the .opf file lives in, for resolving relative hrefs
+    let manifest = {};        // id -> { href, mediaType }
+    let spine = [];           // ordered array of manifest ids
+    let toc = [];             // [{ label, href, children: [...] }]
+    let currentSpineIndex = -1;
+    let fontStep = 0;
+    const blobUrlCache = {};  // zip path -> object URL, so images resolve
+
+    const el = (id) => document.getElementById(id);
+
+    function resolvePath(baseDir, relative) {
+        if (/^https?:\/\//i.test(relative)) return relative;
+        const parts = (baseDir ? baseDir.split('/') : []).filter(Boolean);
+        relative.split('/').forEach(seg => {
+            if (seg === '' || seg === '.') return;
+            if (seg === '..') parts.pop();
+            else parts.push(seg);
+        });
+        return parts.join('/');
+    }
+
+    function base64ToArrayBuffer(b64) {
+        const binary = atob(b64);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes.buffer;
+    }
+
+    async function loadEmbeddedEpub(epubSource) {
+        // epubSource: 'inline' (preview), 'external' (full EPUB from URL), or ArrayBuffer
+        const statusEl = el('upload-status');
+        try {
+            let buf;
+            if (epubSource === 'inline') {
+                buf = base64ToArrayBuffer(window.__EMBEDDED_EPUB_B64__);
+            } else if (epubSource === 'external') {
+                statusEl.textContent = '> loading full volume...';
+                const resp = await fetch(window.__FULL_EPUB_URL__);
+                if (!resp.ok) throw new Error('Failed to fetch EPUB: ' + resp.status);
+                buf = await resp.arrayBuffer();
+            } else if (epubSource instanceof ArrayBuffer) {
+                buf = epubSource;
+            } else {
+                buf = base64ToArrayBuffer(window.__EMBEDDED_EPUB_B64__);
+            }
+
+            // Reset state for reload
+            if (zip) {
+                Object.values(blobUrlCache).forEach(url => URL.revokeObjectURL(url));
+                for (const k in blobUrlCache) delete blobUrlCache[k];
+            }
+
+            zip = await JSZip.loadAsync(buf);
+
+            // 1. container.xml -> path to the .opf package document
+            const containerXml = await zip.file('META-INF/container.xml').async('text');
+            const containerDoc = new DOMParser().parseFromString(containerXml, 'application/xml');
+            const opfPath = containerDoc.querySelector('rootfile').getAttribute('full-path');
+            opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/')) : '';
+
+            // 2. Parse the OPF: metadata, manifest, spine
+            const opfXml = await zip.file(opfPath).async('text');
+            const opfDoc = new DOMParser().parseFromString(opfXml, 'application/xml');
+
+            const bookTitle = opfDoc.querySelector('metadata > *[*|title], metadata > title');
+            el('book-title-display').textContent = bookTitle ? bookTitle.textContent : 'Untitled Volume';
+
+            manifest = {};
+            opfDoc.querySelectorAll('manifest > item').forEach(item => {
+                manifest[item.getAttribute('id')] = {
+                    href: resolvePath(opfDir, item.getAttribute('href')),
+                    mediaType: item.getAttribute('media-type') || '',
+                    properties: item.getAttribute('properties') || ''
+                };
+            });
+
+            spine = Array.from(opfDoc.querySelectorAll('spine > itemref')).map(ref => ref.getAttribute('idref'));
+
+            // 3. Table of contents: prefer an EPUB3 nav document, fall back to NCX, then to spine order
+            toc = await buildToc(opfDoc);
+
+            renderToc();
+            renderBookmarksSidebar();
+            statusEl.textContent = epubSource === 'external' ? '> full volume loaded_' : '';
+            el('upload-screen').style.display = 'none';
+            el('reading-pane').style.display = 'block';
+            el('reader-header').classList.add('show');
+            el('sidebar').classList.add('show');
+            el('menu-toggle-btn').style.display = 'inline-block';
+            if (localStorage.getItem('voxx_focus') === '1') document.body.classList.add('focus-mode');
+
+            await goToChapter(0);
+        } catch (err) {
+            console.error(err);
+            statusEl.textContent = '> ERROR: Could not parse this file as a valid EPUB archive.';
+            statusEl.className = 'upload-status error';
+        }
+    }
+
+    async function buildToc(opfDoc) {
+        // EPUB3 nav document
+        const navItem = Object.values(manifest).find(m => m.properties.includes('nav'));
+        if (navItem) {
+            try {
+                const navXml = await zip.file(navItem.href).async('text');
+                const navDoc = new DOMParser().parseFromString(navXml, 'application/xhtml+xml');
+                const navEl = navDoc.querySelector('nav[*|type="toc"], nav');
+                if (navEl) return parseNavList(navEl.querySelector('ol'), navItem.href);
+            } catch (e) { /* fall through to NCX */ }
+        }
+        // EPUB2 NCX
+        const ncxItem = Object.values(manifest).find(m => m.mediaType === 'application/x-dtbncx+xml');
+        if (ncxItem) {
+            try {
+                const ncxXml = await zip.file(ncxItem.href).async('text');
+                const ncxDoc = new DOMParser().parseFromString(ncxXml, 'application/xml');
+                const root = ncxDoc.querySelector('navMap');
+                if (root) return parseNcxList(root, ncxItem.href);
+            } catch (e) { /* fall through to spine order */ }
+        }
+        // Fallback: just use spine order with generic labels
+        return spine.map((id, i) => ({ label: 'Chapter ' + (i + 1), href: manifest[id] ? manifest[id].href : '', spineIndex: i, children: [] }));
+    }
+
+    function parseNavList(ol, navHref) {
+        if (!ol) return [];
+        const items = [];
+        ol.querySelectorAll(':scope > li').forEach(li => {
+            const a = li.querySelector(':scope > a, :scope > span');
+            const label = a ? a.textContent.trim() : '(untitled)';
+            const rawHref = a && a.getAttribute('href') ? a.getAttribute('href') : '';
+            const cleanHref = rawHref.split('#')[0];
+            const navDir = navHref.includes('/') ? navHref.slice(0, navHref.lastIndexOf('/')) : '';
+            const fullHref = cleanHref ? resolvePath(navDir, cleanHref) : '';
+            const childOl = li.querySelector(':scope > ol');
+            items.push({ label, href: fullHref, spineIndex: spineIndexForHref(fullHref), children: parseNavList(childOl, navHref) });
+        });
+        return items;
+    }
+
+    function parseNcxList(navMapOrPoint, ncxHref) {
+        const items = [];
+        navMapOrPoint.querySelectorAll(':scope > navPoint').forEach(np => {
+            const label = np.querySelector(':scope > navLabel > text');
+            const content = np.querySelector(':scope > content');
+            const rawSrc = content ? content.getAttribute('src') : '';
+            const cleanHref = rawSrc.split('#')[0];
+            const ncxDir = ncxHref.includes('/') ? ncxHref.slice(0, ncxHref.lastIndexOf('/')) : '';
+            const fullHref = cleanHref ? resolvePath(ncxDir, cleanHref) : '';
+            items.push({
+                label: label ? label.textContent.trim() : '(untitled)',
+                href: fullHref,
+                spineIndex: spineIndexForHref(fullHref),
+                children: parseNcxList(np, ncxHref)
+            });
+        });
+        return items;
+    }
+
+    function spineIndexForHref(href) {
+        if (!href) return -1;
+        return spine.findIndex(id => manifest[id] && manifest[id].href === href);
+    }
+
+    function renderToc() {
+        const list = el('toc-list');
+        list.innerHTML = '';
+        const render = (items, depth) => {
+            items.forEach(item => {
+                const btn = document.createElement('button');
+                btn.className = 'toc-item' + (depth > 0 ? ' nested' : '');
+                btn.textContent = item.label;
+                btn.dataset.spineIndex = item.spineIndex;
+                btn.addEventListener('click', () => {
+                    if (item.spineIndex >= 0) goToChapter(item.spineIndex);
+                    if (window.innerWidth <= 760) toggleSidebar(false);
+                });
+                list.appendChild(btn);
+                if (item.children && item.children.length) render(item.children, depth + 1);
+            });
+        };
+        render(toc, 0);
+    }
+
+    function updateActiveTocItem() {
+        document.querySelectorAll('.toc-item').forEach(btn => {
+            btn.classList.toggle('active', Number(btn.dataset.spineIndex) === currentSpineIndex);
+        });
+    }
+
+    async function resolveAssetUrl(path) {
+        if (blobUrlCache[path]) return blobUrlCache[path];
+        const fileEntry = zip.file(path);
+        if (!fileEntry) return '';
+        const blob = await fileEntry.async('blob');
+        const url = URL.createObjectURL(blob);
+        blobUrlCache[path] = url;
+        return url;
+    }
+
+    async function goToChapter(index) {
+        if (!spine.length || index < 0 || index >= spine.length) return;
+        currentSpineIndex = index;
+        const id = spine[index];
+        const item = manifest[id];
+        if (!item) return;
+
+        const raw = await zip.file(item.href).async('text');
+        const doc = new DOMParser().parseFromString(raw, 'application/xhtml+xml');
+        const body = doc.querySelector('body') || doc.documentElement;
+        const dir = item.href.includes('/') ? item.href.slice(0, item.href.lastIndexOf('/')) : '';
+
+        // Rewrite image/src references to point at in-memory blob URLs so pictures render
+        const imgs = Array.from(body.querySelectorAll('img, image'));
+        for (const img of imgs) {
+            const attr = img.hasAttribute('src') ? 'src' : (img.hasAttribute('xlink:href') ? 'xlink:href' : null);
+            if (!attr) continue;
+            const src = img.getAttribute(attr);
+            if (!src || /^(https?:|data:)/i.test(src)) continue;
+            const resolved = resolvePath(dir, src);
+            const url = await resolveAssetUrl(resolved);
+            if (url) img.setAttribute(attr === 'xlink:href' ? 'src' : attr, url);
+        }
+
+        el('reading-pane').innerHTML = body.innerHTML;
+        el('reading-scroll').scrollTo({ top: 0, behavior: 'auto' });
+
+        const label = (findTocLabel(index)) || ('Chapter ' + (index + 1));
+        el('reader-path').textContent = '> READING: ' + label.toUpperCase() + '_';
+        el('progress-label').textContent = (index + 1) + ' / ' + spine.length;
+        el('prev-btn').disabled = index <= 0;
+        el('next-btn').disabled = index >= spine.length - 1;
+        updateActiveTocItem();
+    }
+
+    function findTocLabel(spineIndex) {
+        let found = null;
+        const walk = (items) => {
+            items.forEach(item => {
+                if (item.spineIndex === spineIndex) found = item.label;
+                if (item.children) walk(item.children);
+            });
+        };
+        walk(toc);
+        return found;
+    }
+
+    function adjustFont(dir) {
+        fontStep = Math.max(-2, Math.min(4, fontStep + dir));
+        const size = 1.05 + fontStep * 0.1;
+        el('reading-pane').style.fontSize = size.toFixed(2) + 'rem';
+    }
+
+    function toggleSidebar(force) {
+        const sidebar = el('sidebar');
+        const backdrop = el('sidebar-backdrop');
+        const show = typeof force === 'boolean' ? force : !sidebar.classList.contains('show');
+        sidebar.classList.toggle('show', show);
+        backdrop.classList.toggle('show', show && window.innerWidth <= 760);
+    }
+
+    /* ===== Bookmarks (user-set, persisted per book in localStorage) ===== */
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function bookKey() {
+        const t = (el('book-title-display').textContent || 'untitled').trim();
+        return 'voxx_bookmarks::' + t;
+    }
+    function getBookmarks() {
+        try { return JSON.parse(localStorage.getItem(bookKey()) || '[]'); } catch (e) { return []; }
+    }
+    function saveBookmarks(arr) {
+        try { localStorage.setItem(bookKey(), JSON.stringify(arr)); } catch (e) { /* storage unavailable */ }
+    }
+    function captureRatio() {
+        const sc = el('reading-scroll');
+        const max = sc.scrollHeight - sc.clientHeight;
+        return max > 0 ? Math.min(1, Math.max(0, sc.scrollTop / max)) : 0;
+    }
+    function getVisibleSnippet() {
+        const pane = el('reading-pane');
+        if (!pane) return '';
+        const top = el('reading-scroll').getBoundingClientRect().top;
+        const walker = document.createTreeWalker(pane, NodeFilter.SHOW_TEXT, null);
+        let node, last = '';
+        while ((node = walker.nextNode())) {
+            const txt = node.textContent.trim();
+            if (!txt) continue;
+            const r = node.parentElement.getBoundingClientRect();
+            if (r.bottom >= top + 4) return txt.slice(0, 90);
+            last = txt;
+        }
+        return last.slice(0, 90);
+    }
+    function addBookmark() {
+        if (currentSpineIndex < 0) return;
+        const note = el('bm-note-input').value.trim();
+        const bm = {
+            id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+            spineIndex: currentSpineIndex,
+            ratio: captureRatio(),
+            chapterLabel: findTocLabel(currentSpineIndex) || ('Chapter ' + (currentSpineIndex + 1)),
+            note: note || getVisibleSnippet(),
+            createdAt: Date.now()
+        };
+        const arr = getBookmarks();
+        arr.push(bm);
+        arr.sort((a, b) => a.spineIndex - b.spineIndex || a.ratio - b.ratio);
+        saveBookmarks(arr);
+        renderAllBookmarks();
+        el('bm-note-input').value = '';
+        flashBookmarkSaved();
+    }
+    function deleteBookmark(id) {
+        saveBookmarks(getBookmarks().filter(b => b.id !== id));
+        renderAllBookmarks();
+    }
+    function renderBookmarksSidebar() {
+        const list = el('bm-list-sidebar');
+        if (!list) return;
+        list.innerHTML = '';
+        const bms = getBookmarks();
+        if (!bms.length) {
+            list.innerHTML = '<div class="bm-empty-sidebar">No bookmarks yet.<br>Tap ＋ to mark this spot.</div>';
+            return;
+        }
+        bms.forEach(bm => {
+            const item = document.createElement('div');
+            item.className = 'bm-item-sidebar';
+            const pos = Math.round(bm.ratio * 100);
+            const go = document.createElement('button');
+            go.className = 'bm-sidebar-goto';
+            go.innerHTML = '<span class="bm-sidebar-ch">CH ' + (bm.spineIndex + 1) + ' · ' + pos + '%</span>' +
+                           '<span class="bm-sidebar-note">' + escapeHtml(bm.note || '—') + '</span>';
+            go.addEventListener('click', () => {
+                goToBookmark(bm);
+                if (window.innerWidth <= 760) toggleSidebar(false);
+            });
+            const del = document.createElement('button');
+            del.className = 'bm-sidebar-del';
+            del.textContent = '✕';
+            del.title = 'Delete bookmark';
+            del.addEventListener('click', (e) => { e.stopPropagation(); deleteBookmark(bm.id); });
+            item.appendChild(go);
+            item.appendChild(del);
+            list.appendChild(item);
+        });
+    }
+    function renderAllBookmarks() {
+        renderBookmarks();
+        renderBookmarksSidebar();
+    }
+    function renderBookmarks() {
+        const list = el('bm-list');
+        if (!list) return;
+        list.innerHTML = '';
+        const bms = getBookmarks();
+        if (!bms.length) {
+            list.innerHTML = '<div class="bm-empty">No bookmarks yet.<br>Use <b>“＋ Save here”</b> to mark the current spot, or press <b>B</b>.</div>';
+            return;
+        }
+        bms.forEach(bm => {
+            const item = document.createElement('div');
+            item.className = 'bm-item';
+            const pos = Math.round(bm.ratio * 100);
+            const go = document.createElement('button');
+            go.className = 'bm-goto';
+            go.innerHTML = '<div class="bm-chapter">' + escapeHtml(bm.chapterLabel) + '</div>' +
+                           '<div class="bm-note">' + escapeHtml(bm.note || '—') + '</div>' +
+                           '<div class="bm-meta">CH ' + (bm.spineIndex + 1) + ' · ' + pos + '%</div>';
+            go.addEventListener('click', () => {
+                goToBookmark(bm);
+                if (window.innerWidth <= 760) toggleBookmarks(false);
+            });
+            const del = document.createElement('button');
+            del.className = 'bm-del';
+            del.textContent = '✕';
+            del.title = 'Delete bookmark';
+            del.addEventListener('click', (e) => { e.stopPropagation(); deleteBookmark(bm.id); });
+            item.appendChild(go);
+            item.appendChild(del);
+            list.appendChild(item);
+        });
+    }
+    function flashBookmarkSaved() {
+        const saved = el('bm-saved-hint');
+        if (!saved) return;
+        saved.textContent = '✓ Bookmark saved';
+        saved.classList.add('show');
+        clearTimeout(flashBookmarkSaved._t);
+        flashBookmarkSaved._t = setTimeout(() => saved.classList.remove('show'), 1500);
+    }
+    function restoreScrollByRatio(ratio) {
+        const sc = el('reading-scroll');
+        const apply = () => {
+            const max = sc.scrollHeight - sc.clientHeight;
+            sc.scrollTop = Math.max(0, Math.round(max * ratio));
+        };
+        apply();
+        requestAnimationFrame(() => requestAnimationFrame(apply));
+        setTimeout(apply, 350);
+        window.addEventListener('load', apply, { once: true });
+    }
+    async function goToBookmark(bm) {
+        if (!bm || bm.spineIndex < 0) return;
+        await goToChapter(bm.spineIndex);
+        restoreScrollByRatio(bm.ratio);
+    }
+    function toggleBookmarks(force) {
+        const d = el('bookmarks-drawer');
+        const b = el('bookmarks-backdrop');
+        if (!d) return;
+        const show = typeof force === 'boolean' ? force : !d.classList.contains('show');
+        d.classList.toggle('show', show);
+        b.classList.toggle('show', show && window.innerWidth <= 760);
+        if (show) renderBookmarks();
+    }
+
+    /* ===== Focus / zen mode ===== */
+    function toggleFocus(force) {
+        const on = typeof force === 'boolean' ? force : !document.body.classList.contains('focus-mode');
+        document.body.classList.toggle('focus-mode', on);
+        try { localStorage.setItem('voxx_focus', on ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+    }
+
+    // ===== Read-only / no-download deterrents =====
+    // Note: this is a plain client-side page, so this is a deterrent against casual
+    // saving/copying, not real DRM — anyone determined enough could still pull the
+    // data out of dev tools. There's no way to fully prevent that for content that
+    // has to be sent to the browser to be displayed at all.
+    function initReadOnlyGuards() {
+        document.addEventListener('contextmenu', (e) => e.preventDefault());
+        document.addEventListener('dragstart', (e) => e.preventDefault());
+        document.addEventListener('keydown', (e) => {
+            const k = e.key.toLowerCase();
+            const mod = e.ctrlKey || e.metaKey;
+            if (mod && (k === 's' || k === 'p' || k === 'u')) e.preventDefault();
+        });
+    }
+
+    window.goToChapter = goToChapter;
+    window.adjustFont = adjustFont;
+    window.toggleSidebar = toggleSidebar;
+    window.toggleBookmarks = toggleBookmarks;
+    window.toggleFocus = toggleFocus;
+    window.addBookmark = addBookmark;
+    Object.defineProperty(window, 'currentSpineIndex', { get: () => currentSpineIndex });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initReadOnlyGuards();
+
+        // Wire bookmark UI
+        const bmBtn = el('bookmarks-toggle');
+        if (bmBtn) bmBtn.addEventListener('click', () => toggleBookmarks());
+        const bmClose = el('bookmarks-close');
+        if (bmClose) bmClose.addEventListener('click', () => toggleBookmarks(false));
+        const bmSave = el('bm-save-btn');
+        if (bmSave) bmSave.addEventListener('click', addBookmark);
+        const bmInput = el('bm-note-input');
+        if (bmInput) bmInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addBookmark(); } });
+        const addBmHeader = el('add-bm-btn');
+        if (addBmHeader) addBmHeader.addEventListener('click', addBookmark);
+        const bmInline = el('bm-add-inline');
+        if (bmInline) bmInline.addEventListener('click', addBookmark);
+
+        // Wire focus-mode UI
+        const focusBtn = el('focus-toggle');
+        if (focusBtn) focusBtn.addEventListener('click', () => toggleFocus());
+        const fAdd = el('focus-add-bm');
+        if (fAdd) fAdd.addEventListener('click', addBookmark);
+        const fList = el('focus-bm-list');
+        if (fList) fList.addEventListener('click', () => toggleBookmarks(true));
+        const fExit = el('focus-exit');
+        if (fExit) fExit.addEventListener('click', () => toggleFocus(false));
+
+        // Global keyboard shortcuts (ignored while typing in the note field)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            const ae = document.activeElement;
+            const typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA');
+            if (e.key === 'Escape') {
+                if (el('bookmarks-drawer').classList.contains('show')) toggleBookmarks(false);
+                else if (document.body.classList.contains('focus-mode')) toggleFocus(false);
+                return;
+            }
+            if (typing) return;
+            const k = e.key.toLowerCase();
+            if (k === 'b') { e.preventDefault(); addBookmark(); }
+            else if (k === 'f') { e.preventDefault(); toggleFocus(); }
+        });
+
+        // Load preview EPUB immediately (first 2 chapters inline)
+        loadEmbeddedEpub('inline');
+
+        // Load the full EPUB from external file
+        loadEmbeddedEpub('external');
+    });
+})();
+</script>
+</body>
+</html>
