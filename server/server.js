@@ -16,6 +16,33 @@ const CONFIG = {
   READER_PATH: join(__dirname, '..', 'reader.html'),
 };
 
+// ── Rate limiter (simple in-memory) ──
+const rateLimitMap = new Map(); // IP -> { count, resetTime }
+const RATE_LIMIT = { windowMs: 60_000, max: 10 }; // 10 req/min per IP
+
+function rateLimit(req, res, next) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  let entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetTime) {
+    entry = { count: 0, resetTime: now + RATE_LIMIT.windowMs };
+    rateLimitMap.set(ip, entry);
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT.max) {
+    return res.status(429).json({ error: 'Too many requests. Try again later.' });
+  }
+  next();
+}
+
+// Clean up rate limit map periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetTime) rateLimitMap.delete(ip);
+  }
+}, 60_000);
+
 // ── Express ──
 const app = express();
 app.use(express.json());
