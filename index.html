@@ -13,16 +13,16 @@
     body{min-height:100vh;min-height:100dvh;background-color:#010101;background-image:linear-gradient(rgba(0,255,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,255,.012) 1px,transparent 1px);background-size:90px 90px;background-attachment:fixed;overflow-x:hidden}
     button{font:inherit}
     .stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at center,rgba(0,255,255,.025),transparent 42%)}
-    .card{position:relative;width:460px;max-width:100%;min-height:440px;padding:48px 36px;border:1px solid var(--cyan-dim);background:var(--panel);box-shadow:0 0 35px rgba(0,255,255,.08);text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .card{position:relative;width:520px;max-width:100%;min-height:460px;padding:52px 40px;border:1px solid var(--cyan-dim);background:var(--panel);box-shadow:0 0 35px rgba(0,255,255,.08);text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}
     .corner{position:absolute;width:21px;height:21px;border-color:var(--cyan);filter:drop-shadow(0 0 5px rgba(0,255,255,.5))}
     .corner.tl{top:-2px;left:-2px;border-top:2px solid;border-left:2px solid}.corner.tr{top:-2px;right:-2px;border-top:2px solid;border-right:2px solid}.corner.bl{bottom:-2px;left:-2px;border-bottom:2px solid;border-left:2px solid}.corner.br{right:-2px;bottom:-2px;border-right:2px solid;border-bottom:2px solid}
-    .shield{width:49px;height:49px;border:1px solid var(--cyan);border-radius:50%;display:grid;place-items:center;margin:0 auto 18px;color:var(--cyan);box-shadow:0 0 14px rgba(0,255,255,.35),inset 0 0 12px rgba(0,255,255,.05)}
-    .shield svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.25}
-    .title{margin:0 0 8px;color:#fff;font-size:16px;font-weight:400;letter-spacing:4px}
-    .sub{margin:0 0 12px;color:var(--muted);font-size:11.5px;line-height:1.65}
+    .shield{width:66px;height:66px;border:1px solid var(--cyan);border-radius:50%;display:grid;place-items:center;margin:0 auto 22px;color:var(--cyan);box-shadow:0 0 14px rgba(0,255,255,.35),inset 0 0 12px rgba(0,255,255,.05)}
+    .shield svg{width:31px;height:31px;fill:none;stroke:currentColor;stroke-width:1.25}
+    .title{margin:0 0 10px;color:#fff;font-size:22px;font-weight:400;letter-spacing:5px}
+    .sub{margin:0 0 14px;color:var(--muted);font-size:13.5px;line-height:1.65}
     .sub b{color:var(--cyan);font-weight:400}
-    .scan-scope{margin:0 0 26px;color:#526363;font-size:9.5px;letter-spacing:1px;text-transform:uppercase;line-height:1.6}
-    .button{display:inline-flex;align-items:center;justify-content:center;min-width:194px;min-height:45px;padding:14px 32px;border:1px solid var(--cyan);background:var(--cyan-faint);color:var(--cyan);font-size:13px;letter-spacing:2px;cursor:pointer;transition:background .18s,box-shadow .18s,color .18s;box-shadow:0 0 12px rgba(0,255,255,.08)}
+    .scan-scope{margin:0 0 28px;color:#526363;font-size:11px;letter-spacing:1px;text-transform:uppercase;line-height:1.6}
+    .button{display:inline-flex;align-items:center;justify-content:center;min-width:210px;min-height:50px;padding:16px 36px;border:1px solid var(--cyan);background:var(--cyan-faint);color:var(--cyan);font-size:14px;letter-spacing:2px;cursor:pointer;transition:background .18s,box-shadow .18s,color .18s;box-shadow:0 0 12px rgba(0,255,255,.08)}
     .button:hover{background:rgba(0,255,255,.12);box-shadow:0 0 18px rgba(0,255,255,.22)}
     .button:disabled{opacity:.48;cursor:wait}
     .button.secondary{margin-top:10px;border-color:rgba(0,255,255,.35);background:transparent;color:#78aaaa}
@@ -58,7 +58,7 @@
     .wallet-mark{display:grid;place-items:center;width:36px;height:36px;border-radius:5px;background:#182526;color:var(--cyan);font-size:13px}
     .wallet-mark svg{width:22px;height:22px;fill:currentColor}
     .wallet-group-label{margin:7px 0 1px;color:#526363;font-size:8px;letter-spacing:1.4px;text-align:left}
-    .classification{margin:-5px 0 15px;padding:5px 9px;border:1px solid rgba(255,68,68,.35);color:#bb5656;font-size:8px;letter-spacing:2px;text-transform:uppercase}
+    .classification{margin:-5px 0 15px;padding:6px 11px;border:1px solid rgba(255,68,68,.35);color:#bb5656;font-size:9px;letter-spacing:2px;text-transform:uppercase}
     .case-ref{margin:8px 0 0;color:#354646;font-size:8px;letter-spacing:1.2px}
     .case-ref:before{content:"FILE // ";color:#526363}
     #gate .footer{margin-top:18px}
@@ -66,14 +66,14 @@
     @media(max-width:520px){
       body{background-size:56px 56px}
       .stage{padding:10px}
-      .card{min-height:auto;padding:28px 16px;width:100%}
-      .title,.result h2{font-size:14px;letter-spacing:3px}
+      .card{min-height:auto;padding:34px 18px;width:100%}
+      .title,.result h2{font-size:17px;letter-spacing:3px}
       #gate{padding:20px 14px;max-height:calc(100dvh - 20px);overflow-y:auto;justify-content:flex-start}
-      .shield{width:40px;height:40px;margin-bottom:10px}
-      .shield svg{width:19px;height:19px}
-      .scan-scope{margin-bottom:16px;font-size:8px}
-      .sub{font-size:10px;margin-bottom:8px}
-      .button{min-width:auto;width:100%;padding:12px 20px;font-size:11px;letter-spacing:1.5px}
+      .shield{width:54px;height:54px;margin-bottom:14px}
+      .shield svg{width:26px;height:26px}
+      .scan-scope{margin-bottom:18px;font-size:9.5px}
+      .sub{font-size:11.5px;margin-bottom:10px}
+      .button{min-width:auto;width:100%;padding:14px 20px;font-size:12.5px;letter-spacing:1.5px}
       .wallet-option{padding:10px 10px;min-height:50px;gap:10px;grid-template-columns:32px 1fr auto}
       .wallet-option img,.wallet-mark{width:32px;height:32px}
       .wallet-option strong{font-size:11px}
