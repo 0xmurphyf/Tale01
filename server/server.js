@@ -1,18 +1,12 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { readFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Config ──
 const CONFIG = {
   PORT: 3000,
   JWT_SECRET: process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex'),
   JWT_EXPIRES: '15m',
-  EPUB_PATH: join(__dirname, '..', 'dark_transcendence.epub'),
 };
 
 // ── Rate limiter (simple in-memory) ──
@@ -47,25 +41,6 @@ const app = express();
 app.use(express.json());
 app.set('trust proxy', 1);
 
-// ── JWT middleware ──
-function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid token' });
-  }
-  const token = authHeader.slice(7);
-  try {
-    const decoded = jwt.verify(token, CONFIG.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired' });
-    }
-    return res.status(401).json({ error: 'Token invalid' });
-  }
-}
-
 // ── Health ──
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
@@ -73,8 +48,8 @@ app.get('/api/health', (_req, res) => {
 
 // ── POST /api/verify ──
 // The client-side gate already verified: 1) wallet signature, 2) NFT ownership.
-// Server trusts the gate and issues a short-lived JWT directly.
-// Defense: IP binding, 15-min expiry, rate limiting, Bearer-only token.
+// Server issues a short-lived JWT as a session marker.
+// Defense: 15-min expiry, rate limiting, unique token ID.
 app.post('/api/verify', rateLimit, async (req, res) => {
   const { address } = req.body;
 
@@ -88,36 +63,16 @@ app.post('/api/verify', rateLimit, async (req, res) => {
   }
 
   console.log(`[VERIFY] Gate passed for ${address} — issuing JWT`);
-  const token = issueToken(address, req);
-  res.json({ token });
-});
-
-function issueToken(address, req) {
-  return jwt.sign(
+  const token = jwt.sign(
     {
       address,
       verifiedAt: Date.now(),
-      jti: crypto.randomBytes(8).toString('hex'),  // Unique token ID
+      jti: crypto.randomBytes(8).toString('hex'),
     },
     CONFIG.JWT_SECRET,
     { expiresIn: CONFIG.JWT_EXPIRES }
   );
-}
-
-// ── GET /api/epub ──
-app.get('/api/epub', authMiddleware, (req, res) => {
-  if (!existsSync(CONFIG.EPUB_PATH)) {
-    return res.status(404).json({ error: 'EPUB not found' });
-  }
-
-  console.log(`[EPUB] Served to ${req.user.address} at ${new Date().toISOString()}`);
-
-  res.setHeader('Content-Type', 'application/epub+zip');
-  res.setHeader('Content-Disposition', 'inline; filename="dark_transcendence.epub"');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  res.send(readFileSync(CONFIG.EPUB_PATH));
+  res.json({ token });
 });
 
 // ── Warn if JWT_SECRET is not set ──
@@ -129,5 +84,4 @@ if (!process.env.JWT_SECRET) {
 // ── Start ──
 app.listen(CONFIG.PORT, () => {
   console.log(`[VOXX Gate Server] Running on port ${CONFIG.PORT}`);
-  console.log(`[VOXX Gate Server] EPUB: ${existsSync(CONFIG.EPUB_PATH) ? 'found' : 'MISSING!'}`);
 });
