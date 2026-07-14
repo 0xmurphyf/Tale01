@@ -1193,9 +1193,10 @@ Time: ${new Date().toISOString()}`),{signature:i}=await e.features["sui:signPers
               throw new Error(err.error || 'Server verification failed (HTTP ' + resp.status + ')');
             }
 
-            const { token } = await resp.json();
+            const { token, epubKey } = await resp.json();
             sessionStorage.setItem('voxx-jwt', token);
-            // Navigate to reader. Token is in sessionStorage — same tab, same origin, persists.
+            if (epubKey) sessionStorage.setItem('voxx-epub-key', epubKey);
+            // Navigate to reader. Token + key are in sessionStorage — same tab, same origin, persists.
             window.location.href = '/reader.html';
           } catch (err) {
             btn.disabled = false;

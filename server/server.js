@@ -7,6 +7,7 @@ const CONFIG = {
   PORT: 3000,
   JWT_SECRET: process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex'),
   JWT_EXPIRES: '15m',
+  EPUB_KEY: process.env.EPUB_KEY || 'SAI+lQJC/M2p70LliXMOK3AhHjfFBA3CryLHhEsDxEE=',
 };
 
 // ── Rate limiter (simple in-memory) ──
@@ -62,7 +63,7 @@ app.post('/api/verify', rateLimit, async (req, res) => {
     return res.status(400).json({ error: 'Invalid Sui address format' });
   }
 
-  console.log(`[VERIFY] Gate passed for ${address} — issuing JWT`);
+  console.log(`[VERIFY] Gate passed for ${address} — issuing JWT + epub key`);
   const token = jwt.sign(
     {
       address,
@@ -72,7 +73,7 @@ app.post('/api/verify', rateLimit, async (req, res) => {
     CONFIG.JWT_SECRET,
     { expiresIn: CONFIG.JWT_EXPIRES }
   );
-  res.json({ token });
+  res.json({ token, epubKey: CONFIG.EPUB_KEY });
 });
 
 // ── Warn if JWT_SECRET is not set ──
