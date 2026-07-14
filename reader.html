@@ -147,15 +147,92 @@
     ::-webkit-scrollbar-thumb:hover { background: rgba(0,255,255,0.4); }
 
     @media (max-width: 760px) {
-        .sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 200; transform: translateX(-100%); transition: transform 0.3s; }
-        .sidebar.show { display: block; transform: translateX(0); }
+        /* === Topbar compact === */
+        .topbar { padding: 8px 12px; gap: 8px; }
+        .topbar-left { gap: 8px; }
+        .logo { font-size: 1rem; letter-spacing: 4px; }
+        .logo-sub { font-size: 0.55rem; letter-spacing: 1px; padding-left: 8px; }
         .book-title-display { display: none; }
-        .reading-pane { padding: 30px 20px 70px; font-size: 1rem; }
-        .reader-header { padding: 10px 16px; }
-        .progress-label { display: none; }
+        .topbar-right .lbl { display: none; }
+        .topbar-right { gap: 4px; }
+        .topbar-right .ctrl-btn { padding: 8px 10px; font-size: 0.75rem; min-width: 40px; min-height: 40px; display: flex; align-items: center; justify-content: center; }
+        #menu-toggle-btn { min-width: 40px; min-height: 40px; padding: 8px; }
+
+        /* === Sidebar as overlay === */
+        .sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 200; width: 280px; max-width: 84vw; transform: translateX(-100%); transition: transform 0.3s; }
+        .sidebar.show { display: block; transform: translateX(0); }
         .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 190; }
         .sidebar-backdrop.show { display: block; }
-        .topbar-right .lbl { display: none; }
+        .toc-item { padding: 12px 20px; font-size: 0.82rem; }
+        .toc-item.nested { padding-left: 30px; font-size: 0.76rem; }
+        .bm-item-sidebar { margin-bottom: 2px; }
+        .bm-sidebar-goto { padding: 10px 10px; }
+        .bm-sidebar-del { width: 32px; font-size: 0.82rem; }
+
+        /* === Reading area === */
+        .reader-header { padding: 8px 12px; }
+        .reader-header.show { flex-wrap: nowrap; gap: 6px; }
+        .reader-path { font-size: 0.68rem; max-width: 120px; }
+        .reader-controls { gap: 4px; }
+        .reader-controls .ctrl-btn { padding: 7px 8px; font-size: 0.7rem; min-width: 36px; min-height: 36px; }
+        .reading-pane { padding: 24px 16px 100px; font-size: 1rem; max-width: 100%; }
+        .reading-scroll { padding-bottom: 52px; }
+        .reading-pane h1 { font-size: 1.2rem; }
+        .reading-pane h2 { font-size: 1.05rem; }
+        .reading-pane h3 { font-size: 0.95rem; }
+        .progress-label { display: none; }
+
+        /* === Bookmarks drawer: full-width slide-up === */
+        .bookmarks-drawer {
+            width: 100%; max-width: 100%; top: auto; right: 0; bottom: 0;
+            height: 70vh; max-height: 70vh; border-left: none;
+            border-top: 1px solid rgba(0,255,255,0.25); border-radius: 16px 16px 0 0;
+            transform: translateY(100%); transition: transform 0.3s ease;
+            padding: 12px 0 0;
+        }
+        .bookmarks-drawer.show { display: flex; transform: translateY(0); }
+        .drawer-head { padding: 0 16px 10px; }
+        #bookmarks-close { min-width: 40px; min-height: 40px; font-size: 1rem; }
+        .bm-add { padding: 0 12px 12px; }
+        .bm-list { padding: 10px 12px; }
+        .bm-goto { padding: 12px 12px; }
+        .bm-del { width: 40px; font-size: 0.9rem; }
+        .bookmarks-backdrop.show { display: block; }
+
+        /* === Bottom mobile nav bar === */
+        .mobile-nav {
+            display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 150;
+            background: linear-gradient(0deg, rgba(0,12,12,0.97), rgba(0,8,8,0.92));
+            border-top: 1px solid rgba(0,255,255,0.2);
+            padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom));
+            justify-content: space-around; align-items: center; gap: 4px;
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        }
+        .mobile-nav .ctrl-btn {
+            flex: 1; min-width: 0; min-height: 42px; padding: 6px 4px;
+            font-size: 0.68rem; letter-spacing: 0.5px;
+            display: flex; align-items: center; justify-content: center; gap: 4px;
+            border-radius: 8px; border-color: rgba(0,255,255,0.2);
+        }
+        .mobile-nav .nav-prev,
+        .mobile-nav .nav-next { font-size: 1.1rem; font-weight: bold; }
+        .mobile-nav .nav-toc { border-color: rgba(0,255,255,0.4); }
+
+        /* === Focus mode mobile === */
+        body.focus-mode .reading-pane { padding: 4vh 4vw 18vh; }
+        .focus-bar {
+            bottom: 12px; padding: 6px 8px; gap: 4px;
+            border-radius: 24px;
+        }
+        .focus-bar .ctrl-btn { padding: 10px 10px; font-size: 0.78rem; min-width: 38px; min-height: 38px; }
+
+        /* === Upload screen === */
+        .upload-panel { padding: 30px 20px; }
+        .upload-title { font-size: 0.95rem; letter-spacing: 2px; }
+        .upload-sub { font-size: 0.72rem; }
+
+        /* === Scrollbar thinner === */
+        ::-webkit-scrollbar { width: 4px; }
     }
 
     /* ===== Topbar right controls ===== */
@@ -237,7 +314,8 @@
     body.focus-mode .topbar,
     body.focus-mode .sidebar,
     body.focus-mode .sidebar-backdrop,
-    body.focus-mode .reader-header { display: none !important; }
+    body.focus-mode .reader-header,
+    body.focus-mode .mobile-nav { display: none !important; }
     body.focus-mode .app { height: 100vh; height: 100dvh; }
     body.focus-mode .shell { height: 100%; }
     body.focus-mode .reading-pane { max-width: min(1400px, 94vw); padding: 6vh 4vw 16vh; }
@@ -251,6 +329,9 @@
     }
     body.focus-mode .focus-bar { display: flex; }
     .focus-bar .ctrl-btn { padding: 8px 12px; font-size: 0.8rem; }
+
+    /* === Mobile bottom nav (hidden on desktop) === */
+    .mobile-nav { display: none; }
 
 </style>
 </head>
@@ -316,6 +397,16 @@
                     <div class="reading-pane" id="reading-pane" style="display:none;"></div>
                 </div>
             </div>
+        </div>
+
+        <!-- Mobile bottom navigation -->
+        <div class="mobile-nav" id="mobile-nav" aria-label="Mobile navigation">
+            <button class="ctrl-btn nav-prev" id="m-prev-btn" onclick="goToChapter(currentSpineIndex - 1)" aria-label="Previous chapter">‹ Prev</button>
+            <button class="ctrl-btn nav-toc" id="m-toc-btn" onclick="toggleSidebar()" aria-label="Table of contents">☰ TOC</button>
+            <button class="ctrl-btn" id="m-bm-btn" onclick="toggleBookmarks()" aria-label="Bookmarks">★</button>
+            <button class="ctrl-btn" id="m-font-dec" onclick="adjustFont(-1)" aria-label="Decrease text size">A−</button>
+            <button class="ctrl-btn" id="m-font-inc" onclick="adjustFont(1)" aria-label="Increase text size">A+</button>
+            <button class="ctrl-btn nav-next" id="m-next-btn" onclick="goToChapter(currentSpineIndex + 1)" aria-label="Next chapter">Next ›</button>
         </div>
     </div>
 
@@ -585,6 +676,9 @@ window.__FULL_EPUB_URL__ = "dark_transcendence.epub";</script>
         el('progress-label').textContent = (index + 1) + ' / ' + spine.length;
         el('prev-btn').disabled = index <= 0;
         el('next-btn').disabled = index >= spine.length - 1;
+        const mPrev = el('m-prev-btn'), mNext = el('m-next-btn');
+        if (mPrev) mPrev.disabled = index <= 0;
+        if (mNext) mNext.disabled = index >= spine.length - 1;
         updateActiveTocItem();
     }
 
