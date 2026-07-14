@@ -12,11 +12,11 @@ RUN apk add --no-cache nodejs
 # Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy static files (gate = index.html)
-COPY index.html /usr/share/nginx/html/index.html
+# Copy static files served by nginx
+COPY index.html reader.html /usr/share/nginx/html/
 
-# Copy protected files (NOT served directly by nginx — served via Node API)
-COPY reader.html dark_transcendence.epub /app/
+# Copy EPUB (NOT served directly by nginx — served via Node API)
+COPY dark_transcendence.epub /app/
 
 # Copy backend
 COPY --from=builder /app/node_modules /app/node_modules

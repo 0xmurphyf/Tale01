@@ -13,7 +13,6 @@ const CONFIG = {
   JWT_SECRET: process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex'),
   JWT_EXPIRES: '15m',
   EPUB_PATH: join(__dirname, '..', 'dark_transcendence.epub'),
-  READER_PATH: join(__dirname, '..', 'reader.html'),
 };
 
 // ── Rate limiter (simple in-memory) ──
@@ -130,19 +129,6 @@ app.get('/api/epub', authMiddleware, (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
 
   res.send(readFileSync(CONFIG.EPUB_PATH));
-});
-
-// ── GET /api/reader ──
-app.get('/api/reader', authMiddleware, (req, res) => {
-  if (!existsSync(CONFIG.READER_PATH)) {
-    return res.status(404).json({ error: 'Reader not found' });
-  }
-
-  console.log(`[READER] Served to ${req.user.address} at ${new Date().toISOString()}`);
-
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-  res.sendFile(CONFIG.READER_PATH);
 });
 
 // ── Warn if JWT_SECRET is not set ──

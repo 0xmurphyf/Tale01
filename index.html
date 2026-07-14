@@ -1195,18 +1195,8 @@ Time: ${new Date().toISOString()}`),{signature:i}=await e.features["sui:signPers
 
             const { token } = await resp.json();
             sessionStorage.setItem('voxx-jwt', token);
-
-            // Fetch reader via POST to avoid token in URL
-            const readerResp = await fetch('/api/reader', {
-              headers: { 'Authorization': 'Bearer ' + token }
-            });
-            if (!readerResp.ok) throw new Error('Failed to load reader');
-
-            const html = await readerResp.text();
-            // Replace current page with reader content
-            document.open();
-            document.write(html);
-            document.close();
+            // Navigate to reader. Token is in sessionStorage — same tab, same origin, persists.
+            window.location.href = '/reader.html';
           } catch (err) {
             btn.disabled = false;
             btn.textContent = origText;
