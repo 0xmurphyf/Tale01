@@ -56,13 +56,40 @@
     .wallet-option.placeholder{opacity:.42;cursor:not-allowed}
     .wallet-option.placeholder:hover{border-color:rgba(0,255,255,.15);background:rgba(0,255,255,.02)}
     .wallet-mark{display:grid;place-items:center;width:36px;height:36px;border-radius:5px;background:#182526;color:var(--cyan);font-size:13px}
+    .wallet-mark svg{width:22px;height:22px;fill:currentColor}
     .wallet-group-label{margin:7px 0 1px;color:#526363;font-size:8px;letter-spacing:1.4px;text-align:left}
     .classification{margin:-5px 0 15px;padding:5px 9px;border:1px solid rgba(255,68,68,.35);color:#bb5656;font-size:8px;letter-spacing:2px;text-transform:uppercase}
     .case-ref{margin:8px 0 0;color:#354646;font-size:8px;letter-spacing:1.2px}
     .case-ref:before{content:"FILE // ";color:#526363}
     #gate .footer{margin-top:18px}
     .ghost-config{display:none}
-    @media(max-width:520px){body{background-size:56px 56px}.stage{padding:14px}.card{min-height:430px;padding:40px 24px}.title,.result h2{letter-spacing:3px}#gate{padding:25px 20px}.shield{margin-bottom:12px}.scan-scope{margin-bottom:18px}}
+    @media(max-width:520px){
+      body{background-size:56px 56px}
+      .stage{padding:10px}
+      .card{min-height:auto;padding:28px 16px;width:100%}
+      .title,.result h2{font-size:14px;letter-spacing:3px}
+      #gate{padding:20px 14px;max-height:calc(100dvh - 20px)}
+      .shield{width:40px;height:40px;margin-bottom:10px}
+      .shield svg{width:19px;height:19px}
+      .scan-scope{margin-bottom:16px;font-size:8px}
+      .sub{font-size:10px;margin-bottom:8px}
+      .button{min-width:auto;width:100%;padding:12px 20px;font-size:11px;letter-spacing:1.5px}
+      .wallet-option{padding:10px 10px;min-height:50px;gap:10px;grid-template-columns:32px 1fr auto}
+      .wallet-option img,.wallet-mark{width:32px;height:32px}
+      .wallet-option strong{font-size:11px}
+      .wallet-option small{font-size:8px}
+      .secret{padding:12px}
+      .secret b{font-size:9px}
+      .secret p{font-size:9px}
+      .result-icon{width:40px;height:40px;font-size:20px}
+      .status{font-size:10px}
+      .footer{font-size:8px}
+      .classification{font-size:7px}
+      #gate .button{width:100%}
+      #success .button,#denied .button{width:100%}
+      .gate-connected-addr{font-size:9px!important}
+      .result>p{font-size:10px;max-width:100%}
+    }
   </style>
 </head>
 <body>
@@ -1029,10 +1056,10 @@ Time: ${new Date().toISOString()}`),{signature:i}=await e.features["sui:signPers
 <script>
   (() => {
     const providers = [
-      { name: 'Slush', aliases: ['slush', 'sui wallet'], mark: 'S' },
-      { name: 'Binance', aliases: ['binance'], mark: 'B' },
-      { name: 'Phantom', aliases: ['phantom'], mark: 'P' },
-      { name: 'OKX', aliases: ['okx'], mark: 'O' }
+      { name: 'Slush', aliases: ['slush', 'sui wallet'], mark: 'S', svg: '<svg viewBox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm-1 15l-4-4 1.4-1.4L11 14.2l5.6-5.6L18 10l-7 7z"/></svg>' },
+      { name: 'Binance', aliases: ['binance'], mark: 'B', svg: '<svg viewBox="0 0 24 24"><path d="M8.3 10.2L12 6.5l3.7 3.7 1.5-1.5L12 3.5l-5.2 5.2 1.5 1.5zM3.5 12l1.5-1.5L6.5 12 5 13.5 3.5 12zm4.8 1.8L12 17.5l3.7-3.7 1.5 1.5L12 20.5l-5.2-5.2 1.5-1.5zm9.2-1.8l1.5-1.5 1.5 1.5-1.5 1.5-1.5-1.5zM12 14l-2-2 2-2 2 2-2 2z"/></svg>' },
+      { name: 'Phantom', aliases: ['phantom'], mark: 'P', svg: '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15.93c-3.95-.49-7-3.85-7-7.93 0-.64.08-1.26.22-1.85L8 11.9v1.2c0 2.21 1.79 4 4 4h.5l-.5 2.83zm6.78-3.28c-.44.44-1.04.68-1.68.68H14v-2h2.1c.62 0 1.18-.26 1.58-.7.4-.44.6-1.02.54-1.62-.1-1.08-1.08-1.88-2.18-1.88H14v-2h2.04c2.48 0 4.5 2.02 4.5 4.5 0 1.38-.62 2.62-1.6 3.42l.84.84-1.41 1.41-.84-.84c-.4.4-.93.64-1.5.64H14v-2h2.1c.3 0 .58-.12.78-.32.2-.2.32-.48.32-.78s-.12-.58-.32-.78z"/></svg>' },
+      { name: 'OKX', aliases: ['okx'], mark: 'O', svg: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 8l8 8M16 8l-8 8" stroke="#010101" stroke-width="2" fill="none"/></svg>' }
     ];
     const list = document.querySelector('#walletList');
 
@@ -1064,13 +1091,22 @@ Time: ${new Date().toISOString()}`),{signature:i}=await e.features["sui:signPers
           if (walletName) walletName.textContent = provider.name;
           const detail = wallet.querySelector('small');
           if (detail) detail.textContent = 'INTERFACE ONLINE · AUTHENTICATE';
+          // Replace img or mark span with provider SVG icon
+          const iconEl = wallet.querySelector('img') || wallet.querySelector('.wallet-mark');
+          if (iconEl) {
+            const svgWrap = document.createElement('span');
+            svgWrap.className = 'wallet-mark';
+            svgWrap.innerHTML = provider.svg;
+            svgWrap.style.color = '#0ff';
+            iconEl.replaceWith(svgWrap);
+          }
           fragment.append(wallet);
         } else {
           const button = document.createElement('button');
           button.type = 'button';
           button.disabled = true;
           button.className = 'wallet-option placeholder';
-          button.innerHTML = `<span class="wallet-mark">${provider.mark}</span><span><strong>${provider.name}</strong><small>INTERFACE NOT PRESENT</small></span><span class="arrow">—</span>`;
+          button.innerHTML = `<span class="wallet-mark" style="color:#3a5a5a">${provider.svg}</span><span><strong>${provider.name}</strong><small>INTERFACE NOT PRESENT</small></span><span class="arrow">—</span>`;
           fragment.append(button);
         }
       }
