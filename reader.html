@@ -851,14 +851,9 @@ window.__FULL_EPUB_URL__ = "dark_transcendence.epub";</script>
         // Load the full EPUB via API with JWT token
         (async function loadFullEpub() {
             try {
-                // Get token from URL query or sessionStorage
-                const params = new URLSearchParams(window.location.search);
-                let token = params.get('token');
-                if (!token) {
-                    token = sessionStorage.getItem('voxx-jwt');
-                }
+                // Get token from sessionStorage (set by gate before loading reader)
+                let token = sessionStorage.getItem('voxx-jwt');
                 if (token) {
-                    sessionStorage.setItem('voxx-jwt', token);
                     // Override the URL to use the API endpoint with auth
                     window.__FULL_EPUB_URL__ = '/api/epub';
                     const origFetch = window.fetch;

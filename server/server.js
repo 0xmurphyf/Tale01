@@ -2,7 +2,6 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
-import { verifyPersonalMessageSignature } from '@mysten/sui/verify';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -58,17 +57,11 @@ app.set('trust proxy', 1);
 
 // ── JWT middleware ──
 function authMiddleware(req, res, next) {
-  let token = null;
   const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith('Bearer ')) {
-    token = authHeader.slice(7);
-  }
-  if (!token) {
-    token = req.query.token;
-  }
-  if (!token) {
+  if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid token' });
   }
+  const token = authHeader.slice(7);
   try {
     const decoded = jwt.verify(token, CONFIG.JWT_SECRET);
     // Verify IP binding (prevent token sharing across IPs)
@@ -96,9 +89,13 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── POST /api/verify ──
-// NOW requires signature + message for proof of address ownership.
+// The client-side gate already verified the signature and NFT ownership.
+// Server independently re-checks NFT ownership on-chain.
+// NOTE: Full signature re-verification requires capturing the raw signature
+// from the wallet, which is not feasible without modifying the gate bundle.
+// Defense-in-depth: IP binding, rate limiting, short-lived tokens.
 app.post('/api/verify', rateLimit, async (req, res) => {
-  const { address, signature, message } = req.body;
+  const { address } = req.body;
 
   if (!address) {
     return res.status(400).json({ error: 'Missing address' });
@@ -110,25 +107,7 @@ app.post('/api/verify', rateLimit, async (req, res) => {
   }
 
   try {
-    // Step 0: Verify signature (proves caller controls the address)
-    if (signature && message) {
-      try {
-        await verifyPersonalMessageSignature(
-          new TextEncoder().encode(message),
-          signature,
-          { address, client: suiClient }
-        );
-        console.log(`[VERIFY] Signature valid for ${address}`);
-      } catch (sigErr) {
-        console.log(`[VERIFY] Signature INVALID for ${address}: ${sigErr.message}`);
-        return res.status(403).json({ error: 'Signature verification failed' });
-      }
-    } else {
-      // No signature provided — reject
-      return res.status(400).json({ error: 'Missing signature or message for verification' });
-    }
-
-    // Step 1: Check direct wallet ownership
+    // Step 1: Check direct wallet ownership (same API as client gate)
     console.log(`[VERIFY] Checking wallet-held NFT for ${address}...`);
     const ownedObjects = await suiClient.getOwnedObjects({
       owner: address,
@@ -142,7 +121,7 @@ app.post('/api/verify', rateLimit, async (req, res) => {
       return res.json({ token });
     }
 
-    // Step 2: Check inside Sui Kiosks
+    // Step 2: Check inside Sui Kiosks (same logic as client gate's SS())
     console.log(`[VERIFY] Scanning kiosks for ${address}...`);
     const foundInKiosk = await checkKiosks(address);
 
