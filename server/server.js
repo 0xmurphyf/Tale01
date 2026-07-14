@@ -1,10 +1,11 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
+import { verifyPersonalMessageSignature } from '@mysten/sui/verify';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import crypto from 'crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -14,18 +15,46 @@ const CONFIG = {
   NFT_TYPE: '0xe649354aa848a8ae43d52a2bf75301b3d67dd6654c8df525650c5afe86518dc5::voxx_book_pass::Nft',
   NETWORK: process.env.SUI_NETWORK || 'mainnet',
   JWT_SECRET: process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex'),
-  JWT_EXPIRES: '1h',
+  JWT_EXPIRES: '15m',  // Short-lived tokens
   EPUB_PATH: join(__dirname, '..', 'dark_transcendence.epub'),
   READER_PATH: join(__dirname, '..', 'reader.html'),
 };
 
-// ── Sui Client (JSON RPC - same as client-side gate) ──
+// ── Rate limiter (simple in-memory) ──
+const rateLimitMap = new Map(); // IP -> { count, resetTime }
+const RATE_LIMIT = { windowMs: 60_000, max: 10 }; // 10 req/min per IP
+
+function rateLimit(req, res, next) {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  let entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetTime) {
+    entry = { count: 0, resetTime: now + RATE_LIMIT.windowMs };
+    rateLimitMap.set(ip, entry);
+  }
+  entry.count++;
+  if (entry.count > RATE_LIMIT.max) {
+    return res.status(429).json({ error: 'Too many requests. Try again later.' });
+  }
+  next();
+}
+
+// Clean up rate limit map periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetTime) rateLimitMap.delete(ip);
+  }
+}, 60_000);
+
+// ── Sui Client ──
 const rpcUrl = process.env.SUI_RPC_URL || getFullnodeUrl(CONFIG.NETWORK);
 const suiClient = new SuiClient({ url: rpcUrl });
 
 // ── Express ──
 const app = express();
 app.use(express.json());
+app.set('trust proxy', 1);
 
 // ── JWT middleware ──
 function authMiddleware(req, res, next) {
@@ -41,11 +70,24 @@ function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Missing or invalid token' });
   }
   try {
-    req.user = jwt.verify(token, CONFIG.JWT_SECRET);
+    const decoded = jwt.verify(token, CONFIG.JWT_SECRET);
+    // Verify IP binding (prevent token sharing across IPs)
+    const currentIp = req.ip || req.socket.remoteAddress || '';
+    if (decoded.ipHash && decoded.ipHash !== hashIp(currentIp)) {
+      return res.status(401).json({ error: 'Token bound to different IP' });
+    }
+    req.user = decoded;
     next();
-  } catch {
-    return res.status(401).json({ error: 'Token expired or invalid' });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    return res.status(401).json({ error: 'Token invalid' });
   }
+}
+
+function hashIp(ip) {
+  return crypto.createHash('sha256').update(ip).digest('hex').slice(0, 16);
 }
 
 // ── Health ──
@@ -54,17 +96,39 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── POST /api/verify ──
-// Uses the EXACT SAME API as the client-side gate:
-//   getOwnedObjects() → checkKiosks() → issue JWT
-app.post('/api/verify', async (req, res) => {
-  const { address } = req.body;
+// NOW requires signature + message for proof of address ownership.
+app.post('/api/verify', rateLimit, async (req, res) => {
+  const { address, signature, message } = req.body;
 
   if (!address) {
     return res.status(400).json({ error: 'Missing address' });
   }
 
+  // Validate address format (must be valid Sui hex address)
+  if (!/^0x[0-9a-fA-F]{64}$/.test(address)) {
+    return res.status(400).json({ error: 'Invalid Sui address format' });
+  }
+
   try {
-    // Step 1: Check direct wallet ownership (identical to gate's s0())
+    // Step 0: Verify signature (proves caller controls the address)
+    if (signature && message) {
+      try {
+        await verifyPersonalMessageSignature(
+          new TextEncoder().encode(message),
+          signature,
+          { address, client: suiClient }
+        );
+        console.log(`[VERIFY] Signature valid for ${address}`);
+      } catch (sigErr) {
+        console.log(`[VERIFY] Signature INVALID for ${address}: ${sigErr.message}`);
+        return res.status(403).json({ error: 'Signature verification failed' });
+      }
+    } else {
+      // No signature provided — reject
+      return res.status(400).json({ error: 'Missing signature or message for verification' });
+    }
+
+    // Step 1: Check direct wallet ownership
     console.log(`[VERIFY] Checking wallet-held NFT for ${address}...`);
     const ownedObjects = await suiClient.getOwnedObjects({
       owner: address,
@@ -74,17 +138,17 @@ app.post('/api/verify', async (req, res) => {
 
     if (ownedObjects.data.length > 0) {
       console.log(`[VERIFY] NFT found directly in wallet: ${address}`);
-      const token = issueToken(address);
+      const token = issueToken(address, req);
       return res.json({ token });
     }
 
-    // Step 2: Check inside Sui Kiosks (identical to gate's SS())
+    // Step 2: Check inside Sui Kiosks
     console.log(`[VERIFY] Scanning kiosks for ${address}...`);
     const foundInKiosk = await checkKiosks(address);
 
     if (foundInKiosk) {
       console.log(`[VERIFY] NFT found in kiosk: ${address}`);
-      const token = issueToken(address);
+      const token = issueToken(address, req);
       return res.json({ token });
     }
 
@@ -96,9 +160,15 @@ app.post('/api/verify', async (req, res) => {
   }
 });
 
-function issueToken(address) {
+function issueToken(address, req) {
+  const ip = req.ip || req.socket.remoteAddress || '';
   return jwt.sign(
-    { address, verifiedAt: Date.now() },
+    {
+      address,
+      ipHash: hashIp(ip),
+      verifiedAt: Date.now(),
+      jti: crypto.randomBytes(8).toString('hex'),  // Unique token ID
+    },
     CONFIG.JWT_SECRET,
     { expiresIn: CONFIG.JWT_EXPIRES }
   );
@@ -133,7 +203,7 @@ app.get('/api/reader', authMiddleware, (req, res) => {
   res.sendFile(CONFIG.READER_PATH);
 });
 
-// ── Kiosk scanning (EXACT SAME LOGIC as gate's SS() function) ──
+// ── Kiosk scanning ──
 async function checkKiosks(address) {
   try {
     let cursor = null;
@@ -171,6 +241,12 @@ async function checkKiosks(address) {
 
 function normalizeType(type) {
   return type.replace(/^0x0+/, '0x').toLowerCase();
+}
+
+// ── Warn if JWT_SECRET is not set ──
+if (!process.env.JWT_SECRET) {
+  console.warn('[WARNING] JWT_SECRET not set. Using random secret (tokens invalid on restart).');
+  console.warn('[WARNING] Set JWT_SECRET env var in Railway for persistent tokens.');
 }
 
 // ── Start ──
