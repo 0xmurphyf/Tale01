@@ -1,6 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { SuiGraphQLClient } from '@mysten/sui/graphql';
+import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -19,13 +19,9 @@ const CONFIG = {
   READER_PATH: join(__dirname, '..', 'reader.html'),
 };
 
-// ── Sui GraphQL Client ──
-const graphqlUrl = process.env.SUI_GRAPHQL_URL ||
-  (CONFIG.NETWORK === 'mainnet'
-    ? 'https://graphql.mainnet.sui.io/graphql'
-    : `https://graphql.${CONFIG.NETWORK}.sui.io/graphql`);
-
-const gqlClient = new SuiGraphQLClient({ url: graphqlUrl });
+// ── Sui Client (JSON RPC - same as client-side gate) ──
+const rpcUrl = process.env.SUI_RPC_URL || getFullnodeUrl(CONFIG.NETWORK);
+const suiClient = new SuiClient({ url: rpcUrl });
 
 // ── Express ──
 const app = express();
@@ -58,9 +54,8 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── POST /api/verify ──
-// Client sends: { address }
-// Server independently verifies NFT ownership via Sui GraphQL.
-// The gate already verified the signature client-side; server double-checks on-chain state.
+// Uses the EXACT SAME API as the client-side gate:
+//   getOwnedObjects() → checkKiosks() → issue JWT
 app.post('/api/verify', async (req, res) => {
   const { address } = req.body;
 
@@ -69,26 +64,45 @@ app.post('/api/verify', async (req, res) => {
   }
 
   try {
-    // Check NFT ownership via GraphQL
-    const hasNft = await checkNftOwnership(address);
+    // Step 1: Check direct wallet ownership (identical to gate's s0())
+    console.log(`[VERIFY] Checking wallet-held NFT for ${address}...`);
+    const ownedObjects = await suiClient.getOwnedObjects({
+      owner: address,
+      filter: { StructType: CONFIG.NFT_TYPE },
+      limit: 1,
+    });
 
-    if (!hasNft) {
-      return res.status(403).json({ error: 'No VOXX Book Pass NFT found on this account' });
+    if (ownedObjects.data.length > 0) {
+      console.log(`[VERIFY] NFT found directly in wallet: ${address}`);
+      const token = issueToken(address);
+      return res.json({ token });
     }
 
-    const token = jwt.sign(
-      { address, verifiedAt: Date.now() },
-      CONFIG.JWT_SECRET,
-      { expiresIn: CONFIG.JWT_EXPIRES }
-    );
+    // Step 2: Check inside Sui Kiosks (identical to gate's SS())
+    console.log(`[VERIFY] Scanning kiosks for ${address}...`);
+    const foundInKiosk = await checkKiosks(address);
 
-    console.log(`[VERIFY] JWT issued for ${address}`);
-    res.json({ token });
+    if (foundInKiosk) {
+      console.log(`[VERIFY] NFT found in kiosk: ${address}`);
+      const token = issueToken(address);
+      return res.json({ token });
+    }
+
+    console.log(`[VERIFY] No NFT found for ${address}`);
+    return res.status(403).json({ error: 'No VOXX Book Pass NFT found on this account' });
   } catch (err) {
     console.error('Verify error:', err);
     res.status(500).json({ error: 'Verification failed: ' + (err.message || 'Unknown error') });
   }
 });
+
+function issueToken(address) {
+  return jwt.sign(
+    { address, verifiedAt: Date.now() },
+    CONFIG.JWT_SECRET,
+    { expiresIn: CONFIG.JWT_EXPIRES }
+  );
+}
 
 // ── GET /api/epub ──
 app.get('/api/epub', authMiddleware, (req, res) => {
@@ -119,106 +133,34 @@ app.get('/api/reader', authMiddleware, (req, res) => {
   res.sendFile(CONFIG.READER_PATH);
 });
 
-// ── NFT ownership check via Sui GraphQL ──
-async function checkNftOwnership(address) {
-  try {
-    // Query objects owned by address, filtered by NFT type
-    const result = await gqlClient.query({
-      query: `
-        query CheckNft($owner: SuiAddress!, $type: String!) {
-          address(address: $owner) {
-            objects(filter: { type: $type }, first: 1) {
-              nodes { objectId }
-            }
-          }
-        }
-      `,
-      variables: { owner: address, type: CONFIG.NFT_TYPE },
-    });
-
-    const nodes = result.data?.address?.objects?.nodes;
-    if (nodes && nodes.length > 0) {
-      console.log(`[NFT] Found in wallet: ${address}`);
-      return true;
-    }
-
-    // Check inside Kiosks
-    return await checkKiosks(address);
-  } catch (err) {
-    console.error('NFT ownership check error:', err);
-    return false;
-  }
-}
-
-// ── Kiosk scanning via GraphQL ──
+// ── Kiosk scanning (EXACT SAME LOGIC as gate's SS() function) ──
 async function checkKiosks(address) {
   try {
-    // Get all kiosk owner caps for this address
-    const kioskResult = await gqlClient.query({
-      query: `
-        query GetKiosks($owner: SuiAddress!) {
-          address(address: $owner) {
-            objects(filter: { type: "0x2::kiosk::KioskOwnerCap" }) {
-              nodes {
-                objectId
-                asMoveObject {
-                  contents {
-                    json
-                  }
-                }
-              }
-            }
-          }
-        }
-      `,
-      variables: { owner: address },
-    });
+    let cursor = null;
+    do {
+      const result = await suiClient.getOwnedKiosks({
+        address,
+        pagination: { cursor, limit: 50 },
+      });
 
-    const kioskCaps = kioskResult.data?.address?.objects?.nodes || [];
-    if (kioskCaps.length === 0) return false;
+      const kioskChecks = await Promise.all(
+        result.kioskIds.map((id) =>
+          suiClient.getKiosk({ id }).catch(() => null)
+        )
+      );
 
-    for (const cap of kioskCaps) {
-      try {
-        const json = cap.asMoveObject?.contents?.json;
-        if (!json) continue;
-        const kioskId = json.for;
-        if (!kioskId) continue;
-
-        // Check items in this kiosk
-        const itemsResult = await gqlClient.query({
-          query: `
-            query GetKioskItems($kioskId: SuiAddress!, $nftType: String!) {
-              address(address: $kioskId) {
-                dynamicFields {
-                  nodes {
-                    name {
-                      json
-                    }
-                    value {
-                      ... on MoveValue {
-                        json
-                      }
-                    }
-                  }
-                }
-              }
-              objects(filter: { type: $nftType, owner: $kioskId }, first: 10) {
-                nodes { objectId }
-              }
-            }
-          `,
-          variables: { kioskId, nftType: CONFIG.NFT_TYPE },
-        });
-
-        const items = itemsResult.data?.objects?.nodes;
-        if (items && items.length > 0) {
-          console.log(`[NFT] Found in kiosk ${kioskId} for ${address}`);
-          return true;
-        }
-      } catch (e) {
-        // Skip individual kiosk errors
+      for (const kiosk of kioskChecks) {
+        if (!kiosk) continue;
+        const normalizedTarget = normalizeType(CONFIG.NFT_TYPE);
+        const hasNft = kiosk.items.some(
+          (item) => normalizeType(item.type) === normalizedTarget
+        );
+        if (hasNft) return true;
       }
-    }
+
+      cursor = result.nextCursor;
+      if (!result.hasNextPage || !cursor) break;
+    } while (true);
 
     return false;
   } catch (err) {
@@ -227,11 +169,15 @@ async function checkKiosks(address) {
   }
 }
 
+function normalizeType(type) {
+  return type.replace(/^0x0+/, '0x').toLowerCase();
+}
+
 // ── Start ──
 app.listen(CONFIG.PORT, () => {
   console.log(`[VOXX Gate Server] Running on port ${CONFIG.PORT}`);
   console.log(`[VOXX Gate Server] Network: ${CONFIG.NETWORK}`);
+  console.log(`[VOXX Gate Server] RPC: ${rpcUrl}`);
   console.log(`[VOXX Gate Server] NFT: ${CONFIG.NFT_TYPE}`);
   console.log(`[VOXX Gate Server] EPUB: ${existsSync(CONFIG.EPUB_PATH) ? 'found' : 'MISSING!'}`);
-  console.log(`[VOXX Gate Server] GraphQL: ${graphqlUrl}`);
 });
