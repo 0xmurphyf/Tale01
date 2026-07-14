@@ -1142,8 +1142,9 @@ Time: ${new Date().toISOString()}`),{signature:i}=await e.features["sui:signPers
           btn.textContent = 'SERVER-SIDE VERIFICATION…';
 
           try {
-            const address = document.querySelector('#successAddress')?.textContent?.trim()
-              || sessionStorage.getItem('sui-nft-gate-address');
+            // Gate stores clean address in sessionStorage after verification.
+            // #successAddress textContent may contain formatting/whitespace.
+            const address = sessionStorage.getItem('sui-nft-gate-address');
             if (!address) throw new Error('No verified address');
 
             const resp = await fetch('/api/verify', {
