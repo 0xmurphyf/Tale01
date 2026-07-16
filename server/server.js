@@ -18,7 +18,7 @@ function requiredConfig(env = process.env) {
   if (!jwtSecret || jwtSecret.length < 32) throw new Error('JWT_SECRET must be set to at least 32 characters');
   if (!epubKey || Buffer.from(epubKey, 'base64').length !== 32) throw new Error('EPUB_KEY must be a base64-encoded 32-byte key');
   return {
-    port: Number(env.PORT || 3000),
+    port: Number(env.NODE_PORT || 3000),
     jwtSecret,
     epubKey,
     nftType: env.NFT_TYPE || DEFAULT_NFT_TYPE,
