@@ -6,6 +6,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@mysten/sui": "^1.45.2",
     "express": "^4.22.2",
     "jsonwebtoken": "^9.0.3"
   }

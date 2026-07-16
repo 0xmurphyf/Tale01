@@ -12,8 +12,9 @@ RUN apk add --no-cache nodejs
 # Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy static files served by nginx (reader.html contains encrypted EPUB)
-COPY index.html reader.html /usr/share/nginx/html/
+# Only the public gate is served by nginx. The reader stays behind Node auth.
+COPY index.html /usr/share/nginx/html/
+COPY reader.html /app/private/reader.html
 
 # EPUB is now embedded encrypted in reader.html — no separate file needed
 # COPY dark_transcendence.epub /app/
