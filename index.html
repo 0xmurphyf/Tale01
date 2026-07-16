@@ -1197,7 +1197,8 @@ Time: ${new Date().toISOString()}`),{signature:i}=await e.features["sui:signPers
             sessionStorage.setItem('voxx-jwt', token);
             if (epubKey) sessionStorage.setItem('voxx-epub-key', epubKey);
             // Navigate to reader. Token + key are in sessionStorage — same tab, same origin, persists.
-            window.location.href = '/reader.html';
+            // v=2 cache-busts old reader.html
+            window.location.href = '/reader.html?v=2';
           } catch (err) {
             btn.disabled = false;
             btn.textContent = origText;
