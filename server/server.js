@@ -7,7 +7,7 @@ const CONFIG = {
   PORT: 3000,
   JWT_SECRET: process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex'),
   JWT_EXPIRES: '15m',
-  EPUB_KEY: process.env.EPUB_KEY || 'SAI+lQJC/M2p70LliXMOK3AhHjfFBA3CryLHhEsDxEE=',
+  EPUB_KEY: process.env.EPUB_KEY || 'RW0nzAC+z1sD55y8Ml+NrQwsuoCUzNLpggayzBZl9SU=',
 };
 
 // ── Rate limiter (simple in-memory) ──
