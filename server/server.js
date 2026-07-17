@@ -141,15 +141,20 @@ export function createApp(config, dependencies = {}) {
       return res.status(401).json({ error: 'Invalid, expired, or replayed wallet proof' });
     }
     try {
-      const publicKey = await verifySignature(new TextEncoder().encode(message), signature);
+      const publicKey = await verifySignature(new TextEncoder().encode(message), signature, { address, client });
       if (publicKey.toSuiAddress().toLowerCase() !== address.toLowerCase()) {
         return res.status(401).json({ error: 'Wallet signature does not match address' });
       }
-      if (!(await ownsNft(address))) return res.status(403).json({ error: 'Required NFT not found' });
-      usedSignatures.set(signatureId, now + CHALLENGE_TTL_MS);
     } catch {
       return res.status(401).json({ error: 'Invalid wallet signature' });
     }
+    try {
+      if (!(await ownsNft(address))) return res.status(403).json({ error: 'Required NFT not found' });
+    } catch (error) {
+      console.error('[NFT VERIFY]', error);
+      return res.status(502).json({ error: 'Unable to verify NFT ownership' });
+    }
+    usedSignatures.set(signatureId, now + CHALLENGE_TTL_MS);
     const token = jwt.sign({ address: address.toLowerCase(), jti: crypto.randomBytes(16).toString('hex') }, config.jwtSecret, {
       algorithm: 'HS256', expiresIn: SESSION_SECONDS,
     });

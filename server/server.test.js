@@ -47,6 +47,30 @@ test('server rejects a signed wallet that does not own the NFT', async () => {
   });
 });
 
+test('signature verification receives address and Sui client context', async () => {
+  let options;
+  await withServer({
+    verifySignature: async (_message, _signature, received) => { options = received; return matchingKey; },
+    ownsNft: async () => false,
+  }, async (base) => {
+    await fetch(`${base}/api/verify`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(proof()),
+    });
+    assert.equal(options.address, address);
+    assert.ok(options.client);
+  });
+});
+
+test('chain lookup failures are not reported as bad signatures', async () => {
+  await withServer({ verifySignature: async () => matchingKey, ownsNft: async () => { throw new Error('RPC unavailable'); } }, async (base) => {
+    const response = await fetch(`${base}/api/verify`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(proof()),
+    });
+    assert.equal(response.status, 502);
+    assert.equal((await response.json()).error, 'Unable to verify NFT ownership');
+  });
+});
+
 test('valid proof creates HttpOnly session and cannot be replayed', async () => {
   await withServer({ verifySignature: async () => matchingKey, ownsNft: async () => true }, async (base) => {
     const body = proof();
