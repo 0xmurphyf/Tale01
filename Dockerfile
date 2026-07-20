@@ -14,6 +14,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Only the public gate is served by nginx. The reader stays behind Node auth.
 COPY index.html /usr/share/nginx/html/
+COPY icon-192x192.png site.webmanifest /usr/share/nginx/html/
 COPY reader.html /app/private/reader.html
 
 # EPUB is now embedded encrypted in reader.html — no separate file needed
